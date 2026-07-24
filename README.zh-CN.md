@@ -4,8 +4,8 @@
 
 一个用 TypeScript **从零手写**的通用任务 agent，目的是在动手中学习 agent 架构。
 它具备：归一化的消息模型、可插拔的模型后端（OpenAI + Anthropic）、工具注册表、
-权限门、上下文压缩、会话持久化、MCP 客户端、子代理——通过八个小而受测的阶段逐步搭起来。
-运行在 [Bun](https://bun.sh) 上。
+权限门、上下文压缩、会话持久化、MCP 客户端、子代理、以及可自我编写的技能（skills）
+——通过九个小而受测的阶段逐步搭起来。运行在 [Bun](https://bun.sh) 上。
 
 第一次来？先看 **[新读者导览](docs/GUIDE.md)**。设计背后的思考在
 [`docs/agent-research.md`](docs/agent-research.md)（Claude Code、Codex CLI、
@@ -25,7 +25,9 @@ OpenClaw、Hermes 是怎么造的）和 [`docs/our-agent-design.md`](docs/our-ag
 - **开放的工具生态。** 手写的 MCP（Model Context Protocol）stdio 客户端，把外部
   服务器的工具通过**同一条**注册表 + 权限门接进来，和原生工具待遇一致。
 - **委派。** `spawn_agent` 工具在隔离的子上下文里跑子任务、只回传蒸馏结果；并行委派白送。
-- **有测试。** 75 个测试跑在假 provider 和 mock MCP 服务器上——不联网。用 TypeScript 7 做类型检查。
+- **技能（自我扩展）。** 可复用的流程文档（`SKILL.md`），agent 能 `find_skill` / `read_skill` /
+  `create_skill`——自我改进闭环，且和其它写操作一样受权限门管辖。
+- **有测试。** 86 个测试跑在假 provider 和 mock MCP 服务器上——不联网。用 TypeScript 7 做类型检查。
 
 ## 安装
 
@@ -66,6 +68,7 @@ bun run typecheck   # tsc --noEmit（TypeScript 7）
 | `AGENT_PROVIDER` | 后端：`openai` 或 `anthropic` | `openai` |
 | `AGENT_PERMISSION_MODE` | `default`（询问）、`auto`（全放行）、`readonly`（拒绝写） | `default` |
 | `AGENT_MAX_CONTEXT_TOKENS` | 估算超过此值就压缩上下文 | 内置（默认休眠） |
+| `AGENT_SKILLS_DIR` | 可复用技能（`SKILL.md`）存放目录 | `.agent/skills` |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | OpenAI 后端 | 模型 `gpt-4o-mini` |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` / `ANTHROPIC_BASE_URL` | Anthropic 后端 | 模型 `claude-sonnet-5` |
 
@@ -100,12 +103,16 @@ src/
 │  └─ register.ts    connectMcpServer —— 把 MCP 工具注册进 registry
 ├─ agents/
 │  └─ subagent.ts    createSubagentTool —— spawn_agent（隔离的子 runAgent）
+├─ skills/
+│  ├─ store.ts       SkillStore —— SKILL.md 文件（list/find/read/create）
+│  └─ tools.ts       find_skill / read_skill / create_skill + 系统提示目录
 └─ cli/main.ts       极简终端前端
 ```
 
-内置工具：`read_file`、`list_dir`、`write_file`、`spawn_agent`，以及你配置的任意 MCP 工具。
+内置工具：`read_file`、`list_dir`、`write_file`、`spawn_agent`、`find_skill`、
+`read_skill`、`create_skill`，以及你配置的任意 MCP 工具。
 
-## 八个阶段
+## 各个阶段
 
 每个阶段是一个已合并的 PR，把一条调研出的原理变成受测的代码：
 
@@ -118,10 +125,11 @@ src/
 | P6 | 可插拔多后端：Anthropic adapter + 工厂 | provider 归一化 |
 | P7 | MCP 客户端 | 所有工具来源走同一门 |
 | P8 | 子代理：`spawn_agent` | 上下文隔离、orchestrator-worker |
+| P9 | 技能：find / read / create | 自我扩展、skills ≠ tools |
 
 ## 状态与边界
 
-到 P8 为止功能完整。有意延后（见设计文档）：本地（Ollama/LM Studio）后端、流式输出、
-`bash` 工具、内容级提示注入扫描、MCP HTTP 传输、把已存会话 resume 回活循环。
+到 P9 为止功能完整。有意延后（见设计文档）：本地（Ollama/LM Studio）后端、流式输出、
+`bash` 工具、内容级提示注入扫描、MCP HTTP 传输、把已存会话 resume 回活循环、共享技能注册中心。
 
 为学习而造——不是一个提供支持的产品。

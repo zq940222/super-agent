@@ -14,6 +14,8 @@ import { PermissionPolicy, type PermissionMode, type PermissionRequest } from ".
 import { connectMcpServer } from "../mcp/register";
 import type { McpClient } from "../mcp/client";
 import { createSubagentTool } from "../agents/subagent";
+import { SkillStore } from "../skills/store";
+import { createSkillTools, skillsCatalog } from "../skills/tools";
 import { createRollout } from "../session/rollout";
 import { readFileTool } from "../tools/read-file";
 import { listDirTool } from "../tools/list-dir";
@@ -109,13 +111,19 @@ async function main(): Promise<void> {
     .register(readFileTool)
     .register(listDirTool)
     .register(writeFileTool);
+
+  // Skills (P9): reusable procedure docs the agent can find, read, and author.
+  const skills = new SkillStore(process.env.AGENT_SKILLS_DIR || ".agent/skills");
+  for (const tool of createSkillTools(skills)) registry.register(tool);
+  const system = `${SYSTEM}\n\n${await skillsCatalog(skills)}`;
+
   const mcpClients = await loadMcpServers(registry);
   const policy = new PermissionPolicy({ mode });
 
   // spawn_agent: give subagents the current toolset; render their work indented.
   const childEvents = new EventEmitter().on(renderChild);
   registry.register(
-    createSubagentTool({ provider, tools: registry.all(), system: SYSTEM, policy, approve, events: childEvents, maxSteps: 10 }),
+    createSubagentTool({ provider, tools: registry.all(), system, policy, approve, events: childEvents, maxSteps: 10 }),
   );
 
   const events = new EventEmitter().on(render);
@@ -128,7 +136,7 @@ async function main(): Promise<void> {
     await runAgent(prompt, {
       provider,
       registry,
-      system: SYSTEM,
+      system,
       policy,
       approve,
       workspaceRoot: process.cwd(),

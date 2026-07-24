@@ -12,7 +12,7 @@
 一个用 **TypeScript + Bun 从零手写**的通用任务 agent，为了**在动手中学习 agent 架构**。
 它不是一个产品，而是一条学习路径：先调研市面主流 agent（Claude Code、Codex CLI、OpenClaw、
 Hermes）的架构与原理，再把每一条原理亲手实现、测试验证。最终得到一个能**多步自主推理、
-可插拔多后端、有权限安全、能管理上下文、接得上工具生态、能派生子代理**的 agent。
+可插拔多后端、有权限安全、能管理上下文、接得上工具生态、能派生子代理、能自我沉淀技能**的 agent。
 
 一句话记住内核：**agent = 一个把"下一步做什么"交给模型决定的 while 循环**。
 
@@ -95,6 +95,7 @@ src/
 ├─ session/      rollout —— 会话持久化
 ├─ mcp/          手写 MCP 客户端 + 把 MCP 工具注册进 registry
 ├─ agents/       subagent —— spawn_agent 工具（隔离的子 agent）
+├─ skills/       SkillStore + find/read/create_skill 工具（可复用流程文档、自我扩展）
 └─ cli/          终端前端（引擎的"瘦客户端"，渲染事件流）
 ```
 
@@ -125,9 +126,10 @@ src/
 | P6 多后端 | provider 归一化、可插拔（§4.6） | `providers/anthropic.ts` `providers/factory.ts` | `anthropic-normalize.test.ts` `factory.test.ts` |
 | P7 MCP | JSON-RPC、tools/list 聚合（§4.6） | `mcp/client.ts` `mcp/register.ts` | `mcp-client.test.ts` `mcp-register.test.ts` |
 | P8 子代理 | 上下文隔离、orchestrator-worker（§4.4） | `agents/subagent.ts` | `subagent.test.ts` |
+| P9 技能 | 自我扩展、skills ≠ tools（§3.3、研究里各 agent 的 skills 设计） | `skills/store.ts` `skills/tools.ts` | `skills-store.test.ts` `skills-tools.test.ts` |
 
-每个阶段对应一个 GitHub issue（#1–#13）和一个 squash 合并的 PR（#2,#4,#6,#8,#10,#12,#14），
-提交历史本身就是一条清晰的学习时间线（`git log --oneline`）。
+每个阶段对应一个 GitHub issue 和一个 squash 合并的 PR，提交历史本身就是一条清晰的学习时间线
+（`git log --oneline`）。
 
 ---
 
@@ -146,6 +148,10 @@ src/
 
 **给子代理换工具集**：`createSubagentTool({ tools, maxDepth, ... })`，`tools` 决定子代理能用什么，
 `maxDepth` 控制递归层数（默认 1 = 子代理是叶子）。见 [`agents/subagent.ts`](../src/agents/subagent.ts)。
+
+**加/用技能**：技能是 `.agent/skills/<name>/SKILL.md`（frontmatter + 正文）。agent 用
+`find_skill` 发现、`read_skill` 加载、`create_skill` 自己写新技能（写操作受权限门管辖）。
+默认已集成；换目录用 `AGENT_SKILLS_DIR`。见 [`skills/`](../src/skills/)。
 
 ---
 
