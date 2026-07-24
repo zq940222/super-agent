@@ -47,9 +47,23 @@ export interface RunOptions {
   /** If set, the raw message stream is persisted here. */
   rollout?: RolloutRecorder;
   events?: EventEmitter;
+  /**
+   * Prior conversation to continue (multi-turn frontends like the TUI). The new
+   * user input is appended after it. When set, this run is a *continuation*: only
+   * the delta is recorded to the rollout (see below) and no fresh meta line is
+   * written — the same rollout spans the whole conversation. See ADR-0001 §2.
+   */
+  history?: Message[];
+  /**
+   * Cooperative cancellation. Checked between steps (before each model turn and
+   * after tool execution); on abort the loop stops and emits a `cancelled` event.
+   * A model call already in flight finishes first — in-flight abort needs the
+   * provider seam and is a follow-up. See ADR-0001 §3.
+   */
+  signal?: AbortSignal;
 }
 
-export type StoppedBy = "end_turn" | "max_steps";
+export type StoppedBy = "end_turn" | "max_steps" | "cancelled";
 
 export interface RunResult {
   text: string;
@@ -67,14 +81,25 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
   const budget = opts.maxContextTokens ?? DEFAULT_MAX_CONTEXT_TOKENS;
   const summarize = opts.summarize ?? providerSummarizer(opts.provider);
 
-  let messages: Message[] = [userText(userInput)];
+  // Multi-turn (ADR-0001 §2): seed prior history, then this turn's input. On a
+  // continuation we record only the delta — the new user message here, plus the
+  // assistant/tool messages produced below — and skip the once-per-session meta.
+  const isContinuation = (opts.history?.length ?? 0) > 0;
+  const newUserMessage = userText(userInput);
+  let messages: Message[] = [...(opts.history ?? []), newUserMessage];
   let lastTurn: AssistantTurn | undefined;
 
-  await opts.rollout?.recordMeta({ provider: opts.provider.name });
-  await record(messages[0]!);
+  if (!isContinuation) await opts.rollout?.recordMeta({ provider: opts.provider.name });
+  await record(newUserMessage);
 
   async function record(message: Message): Promise<void> {
     await opts.rollout?.recordMessage(message);
+  }
+
+  function cancelled(completedSteps: number): RunResult {
+    const text = lastTurn ? textOf(lastTurn.message) : "";
+    events.emit({ type: "cancelled", step: completedSteps });
+    return { text, messages, steps: completedSteps, stoppedBy: "cancelled" };
   }
 
   async function runTurn(step: number): Promise<AssistantTurn> {
@@ -93,6 +118,7 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
   }
 
   for (let step = 1; step <= maxSteps; step++) {
+    if (opts.signal?.aborted) return cancelled(step - 1);
     const turn = await runTurn(step);
 
     if (turn.stopReason !== "tool_use") {
@@ -108,6 +134,8 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
     messages.push(resultsMessage);
     await record(resultsMessage);
     events.emit({ type: "step_complete", step, stopReason: turn.stopReason });
+
+    if (opts.signal?.aborted) return cancelled(step);
 
     // Compaction (P4): keep the working context under budget between steps.
     if (estimateTokens(messages) > budget) {
