@@ -32,7 +32,7 @@ Hermes）的架构与原理，再把每一条原理亲手实现、测试验证�
 
 **C. 我想先跑起来** →
 1. [README](../README.zh-CN.md) 的「安装 / 运行」
-2. `bun test` 看 129 个测试怎么验证每个能力（不联网）
+2. `bun test` 看 145 个测试怎么验证每个能力（不联网）
 3. 配一个 key，`bun run agent "列出 src/ 目录，然后解释 engine.ts 做什么"`，看它自己多步干活
 4. 想要常驻多轮对话：`bun run tui`（交互式 REPL，`/exit` 退出，`Ctrl-C` 中断当前任务）
 
@@ -46,7 +46,7 @@ Hermes）的架构与原理，再把每一条原理亲手实现、测试验证�
 | [`our-agent-design.md`](our-agent-design.md) | 我们自己的架构设计 + 8 阶段构建计划 + 数据模型/伪码 | 想理解"我们打算怎么做" |
 | [`agent-comparison.html`](agent-comparison.html) | 四款 agent 的可视化横向对比页 | 想 5 分钟建立全局认知 |
 | `GUIDE.md`（本文件） | 新读者导览：把上面几份和代码串起来 | 现在 |
-| [`adr/`](adr/) | 架构决策记录（ADR）：一处决策一份，含背景/取舍/后果 | 改动某块前，读相关 ADR（如 TUI 见 [`0001`](adr/0001-interactive-tui-frontend.md)） |
+| [`adr/`](adr/) | 架构决策记录（ADR）：一处决策一份，含背景/取舍/后果 | 改动某块前，读相关 ADR（TUI 见 [`0001`](adr/0001-interactive-tui-frontend.md)、流式见 [`0002`](adr/0002-token-streaming.md)） |
 | `agents/` | 工程技能（mattpocock skills）的仓库配置 | 用到那些技能时 |
 
 ---
@@ -75,8 +75,8 @@ flowchart TD
 ```
 
 每一步都同时发生两件事：**发类型化事件**（`turn_start` / `tool_call` / `tool_result` /
-`permission_decision` / `compaction` / `cancelled` / `done`…，供 CLI/TUI/日志订阅）+
-可选**写入 rollout**（append-only JSONL 会话文件）。
+`permission_decision` / `compaction` / `cancelled` / `text_delta`（流式）/ `done`…，供
+CLI/TUI/日志订阅）+ 可选**写入 rollout**（append-only JSONL 会话文件）。
 
 关键不变量：
 - 循环只在模型返回 `end_turn`（不再要工具）时正常结束，`maxSteps` 兜底防跑飞；
@@ -134,9 +134,10 @@ src/
 | P9 技能 | 自我扩展、skills ≠ tools（§3.3、研究里各 agent 的 skills 设计） | `skills/store.ts` `skills/tools.ts` | `skills-store.test.ts` `skills-tools.test.ts` |
 | P10 Azure 后端 | api-key 鉴权、api-version、deployment（§4.6 可插拔） | `providers/azure.ts` | `azure.test.ts` |
 | P11 交互式 TUI | 前端瘦客户端、事件流、UI 无关（[ADR-0001](adr/0001-interactive-tui-frontend.md)） | `tui/*` `runtime/bootstrap.ts` `core/engine.ts`（`history`/`signal`） | `transcript.test.ts` `tui-app.test.ts` `bootstrap.test.ts` `engine-multiturn.test.ts` `inflight-abort.test.ts` |
+| P12 流式渲染 | 事件流实时逐字、opt-in 加法式、子行 vs 前缀稳定（[ADR-0002](adr/0002-token-streaming.md)） | `providers/*`（`stream()`）`core/engine.ts`（`stream`）`tui/app.ts`（volatile `pending`） | `streaming.test.ts` `streaming-adapters.test.ts` `tui-app.test.ts` |
 
 每个阶段对应一个 GitHub issue 和一个 squash 合并的 PR，提交历史本身就是一条清晰的学习时间线
-（`git log --oneline`）。P11 进一步拆成五个子 PR（P-tui-1..5），每步独立可测——见 §7。
+（`git log --oneline`）。P11 拆成五个子 PR（P-tui-1..5）、P12 拆成三个（P12-1..3），每步独立可测——见 §7。
 
 ---
 
@@ -181,8 +182,37 @@ P11 在**不改变"agent 是什么"**的前提下，给引擎加了第二个前�
 脚本化 provider 在**无终端、无网络**下集成测试多轮穿线、取消回退、rollout 孤儿等真实路径。终端胶水
 （raw readline、SIGINT）是有意留薄、不单测的一层——逻辑都下沉到可测的 reducer / approver。
 
-**仍留的 v1 边界**（见 ADR §3/§5）：审批提示处按 Ctrl-C 是"粘"的（用 `n` 拒绝更快）；token 流式
-渲染未做（按轮渲染）；真实 TTY 下 Ctrl-C 的手感需要在真终端里人肉验一次（CI 无法复现）。
+**仍留的 v1 边界**（见 ADR §3/§5）：审批提示处按 Ctrl-C 是"粘"的（用 `n` 拒绝更快）；真实 TTY 下
+Ctrl-C 的手感需要在真终端里人肉验一次（CI 无法复现）。（按轮渲染的局限已由 P12 流式解掉，见下。）
+
+### 流式渲染（P12）：在不破坏上面的前提下加实时逐字
+
+P12 让 `bun run tui` 逐 token 渲染答案。难点不是线协议，而是**流式打破了 P11 渲染层的"前缀稳定、
+只追加"不变量**（token 是子行的）。决策见 [`adr/0002-token-streaming.md`](adr/0002-token-streaming.md)。
+同样三步：接缝/引擎/事件 → 三 adapter 真实流式 → TUI volatile 渲染。
+
+**可迁移的经验（也是几个真踩过的坑）：**
+
+- **流式是 opt-in + 加法式。** `RunOptions.stream` 显式开；引擎流式模式下**仍发 `done` 带全文**——
+  所以 CLI 和所有非 delta 消费者零改动。没 `stream()` 的 provider 自动回退 `generate()`。
+- **接缝复用同一套路**（像加后端/加前端）：`stream?()` 产出 `text_delta` + 终结 `done{turn}`，
+  adapter 在 `done` 里交出**完全归一化**的 turn，引擎不见厂商形状。
+- **别手搓工具重组。** 复用 SDK 自己的 `finalChatCompletion()` / `finalMessage()` 拿到组装好的
+  最终结果，再喂给**现有**归一化器——工具重组走 SDK 的成熟路径，不重写。
+- **子行 delta vs 前缀稳定缓冲的张力（核心）。** committed 缓冲原样保留（整行）；另加一个 volatile
+  `pending`：delta 原样写 + 累积，**任何整行事件之前先 flush-commit `pending`**。这条"整行事件前
+  先提交"就是全部正确性所在（P11 的 done/text 去重的流式版）。
+- **原生 sink 的连带效应。** printer 自己管换行（才能发子行 delta），于是**任何直接写终端**
+  （如 Ctrl-C 的 `⏹ interrupting…`）都必须先 flush `pending`，否则会粘到半个 token 上——统一走
+  `printer.notice`。这是原生 sink 引入的新回归，靠这条规则堵住。
+- **`include_usage` 坑。** OpenAI/Azure 流式默认不返回 usage，要在**流式请求**里显式加
+  `stream_options:{include_usage:true}`（非流式 `create` 会拒），否则 `done` turn 的 token 计数是 0。
+  Anthropic 的 `finalMessage()` 自带。
+- **子 agent 不流式、取消按信号状态判定**——都沿用 P11 的决策：子行缩进无解 → 干脆不流式；
+  abort 检测 provider 无关，且这条新路径也复用了 `runTurn` 的 abort 兜底。
+
+**v1 边界**：只流**文本**（工具整块随 `done` 到）；真实网络的 usage 与流式中途 Ctrl-C 的观感各欠
+一次人验（断言已备，见 ADR-0002）。
 
 ---
 
@@ -232,8 +262,8 @@ worked example——先读 §7 的经验清单，别重复踩坑。
 
 ## 10. 已知边界（有意延后）
 
-诚实标注、没做的部分：本地（Ollama/LM Studio）后端、**token 流式输出**（TUI 目前按轮渲染）、
-`bash` 工具、内容级提示注入扫描、MCP HTTP 传输、把**已存会话 resume 回活循环**（TUI 做了
-活循环内的多轮，但从磁盘 resume 未做——且被中断的轮会在 rollout 里留孤儿，resume 需先清洗）、
-压缩后自动重注入 notes/todo。每一项在 [`our-agent-design.md`](our-agent-design.md)、相关
-[ADR](adr/) 和对应 PR 里都注明了原因。
+诚实标注、没做的部分：本地（Ollama/LM Studio）后端、`bash` 工具、内容级提示注入扫描、
+MCP HTTP 传输、把**已存会话 resume 回活循环**（TUI 做了活循环内的多轮，但从磁盘 resume 未做——
+且被中断的轮会在 rollout 里留孤儿，resume 需先清洗）、压缩后自动重注入 notes/todo。**token 流式
+已由 P12 做了文本级**（工具参数流式与子 agent 流式有意不做，见 [ADR-0002](adr/0002-token-streaming.md)）。
+每一项在 [`our-agent-design.md`](our-agent-design.md)、相关 [ADR](adr/) 和对应 PR 里都注明了原因。
