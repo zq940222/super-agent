@@ -5,8 +5,8 @@
 A general-purpose task agent built **from scratch** in TypeScript, to learn agent
 architecture hands-on. It has a normalized message model, pluggable model
 backends (OpenAI + Anthropic), a tool registry, a permission gate, context
-compaction, session persistence, an MCP client, and subagents — assembled over
-eight small, tested phases. Runs on [Bun](https://bun.sh).
+compaction, session persistence, an MCP client, subagents, and self-authored
+skills — assembled over nine small, tested phases. Runs on [Bun](https://bun.sh).
 
 New here? Start with the **[reader's guide](docs/GUIDE.md)**. The thinking behind
 the design is in [`docs/agent-research.md`](docs/agent-research.md) (how Claude
@@ -29,7 +29,10 @@ Code, Codex CLI, OpenClaw, and Hermes are built) and
   permission gate as native tools.
 - **Delegation.** A `spawn_agent` tool runs subtasks in isolated child contexts
   and returns only a distilled result; parallel delegation is free.
-- **Tested.** 75 passing tests against fake providers and a mock MCP server — no
+- **Skills (self-extension).** Reusable procedure docs (`SKILL.md`) the agent can
+  `find_skill`, `read_skill`, and `create_skill` — a self-improving loop, gated
+  like any other write.
+- **Tested.** 86 passing tests against fake providers and a mock MCP server — no
   network needed. Type-checked with TypeScript 7.
 
 ## Setup
@@ -73,6 +76,7 @@ Environment variables (see [`.env.example`](.env.example)):
 | `AGENT_PROVIDER` | Backend: `openai` or `anthropic` | `openai` |
 | `AGENT_PERMISSION_MODE` | `default` (ask), `auto` (allow all), `readonly` (deny writes) | `default` |
 | `AGENT_MAX_CONTEXT_TOKENS` | Compact once the estimate exceeds this | built-in (dormant) |
+| `AGENT_SKILLS_DIR` | Where reusable `SKILL.md` skills live | `.agent/skills` |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | OpenAI backend | model `gpt-4o-mini` |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` / `ANTHROPIC_BASE_URL` | Anthropic backend | model `claude-sonnet-5` |
 
@@ -107,13 +111,16 @@ src/
 │  └─ register.ts    connectMcpServer — register MCP tools into the registry
 ├─ agents/
 │  └─ subagent.ts    createSubagentTool — spawn_agent (isolated child runAgent)
+├─ skills/
+│  ├─ store.ts       SkillStore — SKILL.md files (list/find/read/create)
+│  └─ tools.ts       find_skill / read_skill / create_skill + system catalog
 └─ cli/main.ts       minimal terminal front-end
 ```
 
-Built-in tools: `read_file`, `list_dir`, `write_file`, `spawn_agent`, plus any
-MCP tools you configure.
+Built-in tools: `read_file`, `list_dir`, `write_file`, `spawn_agent`,
+`find_skill`, `read_skill`, `create_skill`, plus any MCP tools you configure.
 
-## The 8 phases
+## The phases
 
 Each phase is one merged PR and turns a researched principle into tested code:
 
@@ -126,12 +133,13 @@ Each phase is one merged PR and turns a researched principle into tested code:
 | P6 | pluggable multi-backend: Anthropic adapter + factory | provider normalization |
 | P7 | MCP client | one gate for every tool source |
 | P8 | subagents: `spawn_agent` | context isolation, orchestrator-worker |
+| P9 | skills: find / read / create | self-extension, skills ≠ tools |
 
 ## Status & limits
 
-Feature-complete through P8. Deliberately deferred (see the design doc): a local
+Feature-complete through P9. Deliberately deferred (see the design doc): a local
 (Ollama/LM Studio) backend, streaming, a `bash` tool, content-level
-prompt-injection scanning, MCP HTTP transport, and resuming a saved session into
-the live loop.
+prompt-injection scanning, MCP HTTP transport, resuming a saved session into
+the live loop, and a shared skill registry.
 
 Built to learn — not a supported product.
