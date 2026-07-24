@@ -27,6 +27,16 @@ export interface AzureOpenAIProviderOptions {
   deployment?: string;
 }
 
+/** Catch values left as an unfilled `<...>` placeholder from .env.example. */
+function assertNotPlaceholder(name: string, value: string): void {
+  if (/[<>]/.test(value)) {
+    throw new Error(
+      `${name} looks like an unfilled placeholder ("${value}"). ` +
+        `Replace it with the real value from the Azure portal (Model deployments).`,
+    );
+  }
+}
+
 /** Reduce a possibly-full endpoint URL (with /openai/... and query) to its origin. */
 function toOrigin(url: string): string {
   try {
@@ -56,6 +66,8 @@ export class AzureOpenAIProvider implements ModelProvider {
     if (!deployment) {
       throw new Error("AZURE_OPENAI_DEPLOYMENT is not set (your Azure deployment name).");
     }
+    assertNotPlaceholder("AZURE_OPENAI_ENDPOINT", endpoint);
+    assertNotPlaceholder("AZURE_OPENAI_DEPLOYMENT", deployment);
 
     this.deployment = deployment;
     this.client = new OpenAI({

@@ -54,6 +54,15 @@ test("throws a clear error when a required setting is missing", () => {
   });
 });
 
+test("rejects an unfilled <placeholder> deployment with a clear error", () => {
+  withEnv({ ...FULL_ENV, AZURE_OPENAI_DEPLOYMENT: "<your-deployment-name>" }, () => {
+    expect(() => new AzureOpenAIProvider()).toThrow(/placeholder/i);
+  });
+  withEnv({ ...FULL_ENV, AZURE_OPENAI_ENDPOINT: "https://<resource>.cognitiveservices.azure.com" }, () => {
+    expect(() => new AzureOpenAIProvider()).toThrow(/placeholder/i);
+  });
+});
+
 test("the factory selects azure via AGENT_PROVIDER", () => {
   withEnv({ ...FULL_ENV, AGENT_PROVIDER: "azure" }, () => {
     expect(createProvider().name).toBe("azure");
