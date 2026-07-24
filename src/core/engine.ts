@@ -17,7 +17,7 @@
 
 import type { AssistantTurn, Message, ToolResultBlock, ToolUseBlock } from "./types";
 import { textOf, toolResults, toolUsesOf, userText } from "./types";
-import type { ModelProvider } from "../providers/provider";
+import type { GenerateRequest, ModelProvider } from "../providers/provider";
 import type { ToolContext, ToolRegistry } from "../tools/registry";
 import { type Approver, PermissionPolicy } from "../permissions/gate";
 import { type Summarizer, compact, estimateTokens, providerSummarizer } from "./compaction";
@@ -55,12 +55,18 @@ export interface RunOptions {
    */
   history?: Message[];
   /**
-   * Cooperative cancellation. Checked between steps (before each model turn and
-   * after tool execution); on abort the loop stops and emits a `cancelled` event.
-   * A model call already in flight finishes first — in-flight abort needs the
-   * provider seam and is a follow-up. See ADR-0001 §3.
+   * Cancellation. Checked between steps and forwarded to the provider call, so a
+   * model request already in flight aborts too (ADR-0001 §3). On abort the loop
+   * stops and emits a `cancelled` event.
    */
   signal?: AbortSignal;
+  /**
+   * Opt in to token streaming (main-loop frontends like the TUI). When set and
+   * `provider.stream` exists, the engine consumes the stream and emits
+   * `text_delta` events; otherwise it uses `generate()`. Subagents leave this
+   * off, so their output arrives whole. See ADR-0002.
+   */
+  stream?: boolean;
 }
 
 export type StoppedBy = "end_turn" | "max_steps" | "cancelled";
@@ -104,18 +110,34 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
 
   async function runTurn(step: number): Promise<AssistantTurn> {
     events.emit({ type: "turn_start", step });
-    const turn = await opts.provider.generate({
-      system: opts.system,
-      messages,
-      tools: toolSpecs,
-      maxTokens: opts.maxTokens,
-      signal: opts.signal,
-    });
+    const req = { system: opts.system, messages, tools: toolSpecs, maxTokens: opts.maxTokens, signal: opts.signal };
+
+    // Stream only when opted in AND the provider supports it; else one whole turn.
+    const streaming = Boolean(opts.stream && opts.provider.stream);
+    const turn = streaming ? await streamTurn(req) : await opts.provider.generate(req);
+
+    // Shared post-turn tail — identical for both paths, so rollout/history never
+    // diverge. The ONLY difference is text emission: a streamed turn already sent
+    // its text as deltas, so skip the whole `text` block here (ADR-0002 §4).
     lastTurn = turn;
     messages.push(turn.message);
     await record(turn.message);
-    emitTurnBlocks(turn, events);
+    emitTurnBlocks(turn, events, { skipText: streaming });
     return turn;
+  }
+
+  /** Consume the provider's stream: emit text deltas, return the assembled turn. */
+  async function streamTurn(req: GenerateRequest): Promise<AssistantTurn> {
+    let finalTurn: AssistantTurn | undefined;
+    for await (const chunk of opts.provider.stream!(req)) {
+      if (chunk.type === "text_delta") {
+        if (chunk.text) events.emit({ type: "text_delta", text: chunk.text });
+      } else {
+        finalTurn = chunk.turn;
+      }
+    }
+    if (!finalTurn) throw new Error("provider.stream ended without a done chunk");
+    return finalTurn;
   }
 
   for (let step = 1; step <= maxSteps; step++) {
@@ -168,10 +190,11 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
   return { text, messages, steps: maxSteps, stoppedBy: "max_steps" };
 }
 
-function emitTurnBlocks(turn: AssistantTurn, events: EventEmitter): void {
+function emitTurnBlocks(turn: AssistantTurn, events: EventEmitter, opts: { skipText?: boolean } = {}): void {
   for (const block of turn.message.content) {
     if (block.type === "text" && block.text) {
-      events.emit({ type: "text", text: block.text });
+      // When streamed, the text already went out as `text_delta`s — don't re-emit.
+      if (!opts.skipText) events.emit({ type: "text", text: block.text });
     } else if (block.type === "thinking") {
       events.emit({ type: "thinking", text: block.text });
     } else if (block.type === "tool_use") {

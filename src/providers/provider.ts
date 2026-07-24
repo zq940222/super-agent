@@ -27,9 +27,25 @@ export interface GenerateRequest {
   signal?: AbortSignal;
 }
 
+/**
+ * A streamed inference: zero or more incremental chunks followed by a terminal
+ * `done` carrying the fully-normalized turn. The adapter accumulates the SDK's
+ * stream and assembles the `done.turn` so it is byte-identical to what
+ * `generate()` would return — the engine never sees a vendor shape. v1 streams
+ * text only; tool_use blocks arrive whole in `done.turn`. See ADR-0002.
+ */
+export type StreamChunk =
+  | { type: "text_delta"; text: string }
+  | { type: "done"; turn: AssistantTurn };
+
 export interface ModelProvider {
   readonly name: string;
   /** One inference → one normalized AssistantTurn. */
   generate(req: GenerateRequest): Promise<AssistantTurn>;
-  // stream(req): AsyncIterable<StreamEvent>  — deferred to a later phase.
+  /**
+   * Optional token streaming. When present and the caller opts in
+   * (`RunOptions.stream`), the engine consumes this instead of `generate`,
+   * emitting `text_delta` events as chunks arrive. Must end with a `done` chunk.
+   */
+  stream?(req: GenerateRequest): AsyncIterable<StreamChunk>;
 }
