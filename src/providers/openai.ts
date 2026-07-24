@@ -228,7 +228,7 @@ export class OpenAIProvider implements ModelProvider {
     if (req.maxTokens) params.max_completion_tokens = req.maxTokens;
 
     // Single cast at the SDK boundary; our structural types match the wire shape.
-    const resp = await this.client.chat.completions.create(params as any);
+    const resp = await this.client.chat.completions.create(params as any, { signal: req.signal });
     return fromOpenAIResponse(resp as unknown as OAIResponse);
   }
 }

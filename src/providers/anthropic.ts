@@ -195,7 +195,7 @@ export class AnthropicProvider implements ModelProvider {
     }
 
     // Single cast at the SDK boundary; our structural types match the wire shape.
-    const resp = await this.client.messages.create(params as any);
+    const resp = await this.client.messages.create(params as any, { signal: req.signal });
     return fromAnthropicResponse(resp as unknown as AnthResponse);
   }
 }

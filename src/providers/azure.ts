@@ -89,7 +89,7 @@ export class AzureOpenAIProvider implements ModelProvider {
     }
     if (req.maxTokens) params.max_completion_tokens = req.maxTokens;
 
-    const resp = await this.client.chat.completions.create(params as any);
+    const resp = await this.client.chat.completions.create(params as any, { signal: req.signal });
     return fromOpenAIResponse(resp as unknown as OAIResponse);
   }
 }

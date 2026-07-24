@@ -17,7 +17,7 @@ import type { Message } from "./types";
 import { textOf, userText } from "./types";
 import type { ModelProvider } from "../providers/provider";
 
-export type Summarizer = (messages: Message[]) => Promise<string>;
+export type Summarizer = (messages: Message[], signal?: AbortSignal) => Promise<string>;
 
 /** Rough token estimate (~4 chars/token) — good enough to trigger compaction. */
 export function estimateTokens(messages: Message[]): number {
@@ -39,6 +39,8 @@ function containsToolResult(message: Message): boolean {
 export interface CompactOptions {
   /** How many recent messages to keep verbatim (before the safe-boundary adjustment). */
   keepRecent?: number;
+  /** Forwarded to the summarizer's model call so it, too, is interruptible (P-tui-5). */
+  signal?: AbortSignal;
 }
 
 /**
@@ -61,7 +63,7 @@ export async function compact(
 
   const head = messages.slice(0, start);
   const tail = messages.slice(start);
-  const summary = await summarize(head);
+  const summary = await summarize(head, opts.signal);
   const summaryMessage = userText(`[Earlier conversation, summarized]\n${summary}`);
   return [summaryMessage, ...tail];
 }
@@ -97,13 +99,14 @@ function renderForSummary(messages: Message[]): string {
 
 /** Default summarizer: ask the model to compress the history. */
 export function providerSummarizer(provider: ModelProvider): Summarizer {
-  return async (messages) => {
+  return async (messages, signal) => {
     const turn = await provider.generate({
       system: SUMMARY_SYSTEM,
       messages: [
         userText(`Summarize the following so the agent can continue with minimal context:\n\n${renderForSummary(messages)}`),
       ],
       maxTokens: 1024,
+      signal,
     });
     return textOf(turn.message).trim() || "(no summary produced)";
   };
