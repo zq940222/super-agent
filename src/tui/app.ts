@@ -27,23 +27,58 @@ import { nextHistory } from "./conversation";
 export interface Printer {
   event(event: AgentEvent, source: Source): void;
   user(text: string): void;
+  /**
+   * Write a one-off UI line (e.g. a Ctrl-C ack) — commits any open streamed
+   * `pending` first, so the line can't glue onto a half-written token. Not part
+   * of the transcript buffer.
+   */
+  notice(line: string): void;
 }
 
-export function createPrinter(write: (line: string) => void): Printer {
+/**
+ * `write` is a RAW sink (no implicit newline) — the printer owns line breaks, so
+ * it can emit sub-line token deltas. Committed transcript lines are written with
+ * a trailing newline; streamed deltas are written as-is and accumulate in a
+ * volatile `pending` string until a whole-line event flushes them. See ADR-0002 §5.
+ */
+export function createPrinter(write: (s: string) => void): Printer {
   let buf: Transcript = emptyTranscript();
   let printed = 0;
+  let pending = ""; // streamed text written to the screen but not yet committed as a line
+
   const flush = (): void => {
-    for (const line of buf.slice(printed)) write(line);
+    for (const line of buf.slice(printed)) write(line + "\n");
     printed = buf.length;
   };
+  // Terminate the volatile stream line and commit it as a buffer line. It's
+  // already on screen, so bump `printed` past it — flush must not reprint it.
+  const commitPending = (): void => {
+    if (!pending) return;
+    write("\n");
+    buf = [...buf, pending];
+    printed = buf.length;
+    pending = "";
+  };
+
   return {
     event(event, source) {
+      if (event.type === "text_delta") {
+        write(event.text); // raw, no newline — the live token stream
+        pending += event.text;
+        return;
+      }
+      commitPending(); // flush any streamed line BEFORE rendering a whole-line event
       buf = reduce(buf, event, source);
       flush();
     },
     user(text) {
+      commitPending();
       buf = appendUser(buf, text);
       flush();
+    },
+    notice(line) {
+      commitPending();
+      write(line + "\n");
     },
   };
 }
@@ -61,6 +96,8 @@ export interface ReplDeps {
   endRun?: () => void;
   rollout?: RolloutRecorder;
   maxContextTokens?: number;
+  /** Opt into token streaming (the TUI sets this). See ADR-0002. */
+  stream?: boolean;
 }
 
 /** Slash-commands that end the session. */
@@ -92,6 +129,7 @@ export async function runRepl(deps: ReplDeps): Promise<void> {
         events,
         history,
         signal,
+        stream: deps.stream,
       });
       history = nextHistory(history, result);
     } catch (err) {

@@ -114,6 +114,10 @@ integration test hermetic: a fake streaming provider + a capturing sink asserts
   indentation.
 - The renderer now has a volatile path; the flush-before-whole-line rule must hold or output
   interleaves wrong — hence it's an explicit, tested invariant.
+- Because the sink is now raw, any *direct* terminal write while a token stream is open would
+  glue onto a half-written line. The one such write — the Ctrl-C ack in main.ts — is routed
+  through `printer.notice`, which flushes `pending` first (tested). The full interactive feel
+  of interrupting mid-stream still wants a real-TTY check (CI can't reproduce it).
 
 ## Alternatives considered
 

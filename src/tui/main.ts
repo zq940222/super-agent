@@ -26,8 +26,10 @@ async function main(): Promise<void> {
   const mode = (process.env.AGENT_PERMISSION_MODE as PermissionMode) || "default";
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const writeLine = (s: string): void => void process.stdout.write(s + "\n");
-  const printer = createPrinter(writeLine);
+  const writeLine = (s: string): void => void process.stdout.write(s + "\n"); // banners / logs
+  // The printer owns its own newlines (it emits sub-line token deltas), so it
+  // gets a RAW sink. See ADR-0002 §5.
+  const printer = createPrinter((s) => void process.stdout.write(s));
 
   // The policy is created here and shared with bootstrap, so the approver's
   // "always allow" (which mutates it) reaches the engine's gate.
@@ -63,7 +65,9 @@ async function main(): Promise<void> {
   // double-fire is harmless — abort() is a no-op the second time.
   const interrupt = (): void => {
     if (currentRun) {
-      if (!currentRun.signal.aborted) writeLine(dim("  ⏹ interrupting…"));
+      // Through the printer so it commits any half-written streamed line first,
+      // instead of gluing the ack onto a partial token (ADR-0002 §5).
+      if (!currentRun.signal.aborted) printer.notice(dim("  ⏹ interrupting…"));
       currentRun.abort();
     } else if (!closed) {
       rl.close();
@@ -113,6 +117,7 @@ async function main(): Promise<void> {
       },
       rollout,
       maxContextTokens,
+      stream: true,
     });
     writeLine(dim(`(session: ${sessionPath})`));
   } finally {

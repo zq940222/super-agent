@@ -8,7 +8,7 @@ import { createPrinter, runRepl } from "../src/tui/app";
 import { bootstrap } from "../src/runtime/bootstrap";
 import { PermissionPolicy, type PermissionRequest } from "../src/permissions/gate";
 import { userText, type AssistantTurn, type Message } from "../src/core/types";
-import type { GenerateRequest, ModelProvider } from "../src/providers/provider";
+import type { GenerateRequest, ModelProvider, StreamChunk } from "../src/providers/provider";
 import type { RunResult } from "../src/core/engine";
 import type { RolloutRecorder } from "../src/session/rollout";
 
@@ -160,6 +160,76 @@ test("printer interleaves main and child output, writing each line once", () => 
   expect(lines[1]).toContain("working");
   expect(lines[2]!.startsWith("    ")).toBe(true); // child indent
   expect(lines[2]).toContain("sub result");
+});
+
+// --- streaming render (ADR-0002 §5): volatile pending + flush-before-whole-line ---
+
+test("printer writes deltas raw, then commits them as a line before the next whole-line event", () => {
+  const out: string[] = [];
+  const printer = createPrinter((s) => out.push(s));
+
+  printer.event({ type: "text_delta", text: "hel" }, "main");
+  printer.event({ type: "text_delta", text: "lo" }, "main");
+  expect(out).toEqual(["hel", "lo"]); // raw deltas, nothing committed yet
+
+  printer.event({ type: "tool_call", id: "t1", name: "echo", input: {} }, "main");
+  expect(out[2]).toBe("\n"); // pending terminated BEFORE the tool line
+  const joined = out.join("");
+  expect(joined).toContain("hello");
+  expect(joined.indexOf("🔧")).toBeGreaterThan(joined.indexOf("hello")); // tool line after
+});
+
+test("printer commits a streamed line exactly once (done adds nothing)", () => {
+  const out: string[] = [];
+  const printer = createPrinter((s) => out.push(s));
+  printer.event({ type: "text_delta", text: "answer" }, "main");
+  printer.event({ type: "done", text: "answer", steps: 1 }, "main");
+  expect(out.join("")).toBe("answer\n"); // streamed once, committed, no duplicate
+});
+
+test("printer commits partial streamed text before a cancellation marker", () => {
+  const out: string[] = [];
+  const printer = createPrinter((s) => out.push(s));
+  printer.event({ type: "text_delta", text: "partial" }, "main");
+  printer.event({ type: "cancelled", step: 1 }, "main");
+  const joined = out.join("");
+  expect(joined.startsWith("partial\n")).toBe(true); // partial preserved, then its line ends
+  expect(joined).toContain("⏹"); // cancel marker follows on its own line
+});
+
+test("printer.notice commits any half-written stream before the ack line", () => {
+  const out: string[] = [];
+  const printer = createPrinter((s) => out.push(s));
+  printer.event({ type: "text_delta", text: "Hello wor" }, "main"); // mid-token, no newline yet
+  printer.notice("  ⏹ interrupting…");
+  // The ack must NOT glue onto "Hello wor" — pending is flushed first.
+  expect(out.join("")).toBe("Hello wor\n  ⏹ interrupting…\n");
+});
+
+test("runRepl streams tokens then commits the line (no duplicate)", async () => {
+  const provider: ModelProvider = {
+    name: "streaming",
+    async generate() {
+      return endTurn("(unused)");
+    },
+    async *stream(): AsyncIterable<StreamChunk> {
+      yield { type: "text_delta", text: "hel" };
+      yield { type: "text_delta", text: "lo" };
+      yield { type: "done", turn: endTurn("hello") };
+    },
+  };
+  await withRuntime(provider, async (runtime) => {
+    const inputs = ["hi"];
+    let i = 0;
+    const readLine = async (): Promise<string | null> => (i < inputs.length ? inputs[i++]! : null);
+    const out: string[] = [];
+    const printer = createPrinter((s) => out.push(s));
+
+    await runRepl({ runtime, approve: async () => true, printer, readLine, stream: true });
+
+    // prompt echo, deltas streamed raw, then a single committed line — done adds nothing.
+    expect(out.join("")).toBe("› hi\nhello\n");
+  });
 });
 
 // --- integration: multi-turn history threading ---
