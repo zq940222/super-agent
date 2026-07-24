@@ -40,6 +40,12 @@ export interface BootstrapOptions {
   provider?: ModelProvider;
   /** Permission mode. Default `default` (low-risk allowed, else ask). */
   mode?: PermissionMode;
+  /**
+   * Inject the session policy (tests / frontends whose approver mutates it via
+   * `allowForSession`). Default: a fresh `PermissionPolicy({ mode })`. Sharing
+   * the instance is what lets an approver's "always allow" reach the engine.
+   */
+  policy?: PermissionPolicy;
   /** HITL approver — used by both the main loop and subagents. */
   approve?: Approver;
   /** Observe subagent (child) runs, e.g. for nested rendering (source-tagged). */
@@ -70,7 +76,7 @@ export interface Runtime {
 export async function bootstrap(opts: BootstrapOptions = {}): Promise<Runtime> {
   const provider = opts.provider ?? createProvider();
   const mode = opts.mode ?? "default";
-  const policy = new PermissionPolicy({ mode });
+  const policy = opts.policy ?? new PermissionPolicy({ mode });
   opts.log?.(`backend: ${provider.name} · permissions: ${mode}`);
 
   const registry = new ToolRegistry()

@@ -120,6 +120,29 @@ second thing to print).
   Ctrl-C) is fiddly; it is kept a thin, untested glue layer with logic pushed down into
   the tested reducer/approver.
 
+## Realized in P-tui-4 (implementation notes)
+
+- **The approver is line-based** (`y`/`n`/`a` + Enter), not raw single-key — it sidesteps
+  the raw-mode↔readline conflict for v1; single-key is a polish follow-up.
+- **The approver is serialized.** Parallel `spawn_agent` calls run concurrently, so two
+  children can reach the approver at once; a promise-chain presents prompts strictly one
+  at a time. Overlapping prompts would be a wrong *safety* decision, not just a glitch.
+- **Interrupted turns don't advance the conversation.** `nextHistory` advances history only
+  on `end_turn`; `cancelled`/`max_steps` keep the pre-run history. Two consequences:
+  `max_steps` loses continuity ("continue" starts without the agent's partial work), and the
+  **rollout is a superset of history** — a reverted turn already recorded its delta as it
+  ran, so the persisted log keeps *orphaned* entries (the cancelled turn's prompt, plus a
+  second `meta` line because the next turn is again a non-continuation). Harmless today
+  (nothing resumes), but a future resume must **sanitize** the log — drop orphaned/duplicate
+  entries and any trailing `tool_results` — not merely tolerate them. Pinned by a test.
+- **Ctrl-C at an approval prompt is sticky (v1).** The abort fires, but the approver is
+  blocked reading a line, so nothing cancels until the user answers — and answering `y` runs
+  that tool before the next between-steps check. Decline with `n` to stop promptly; a
+  raceable read is a follow-up.
+- **Ctrl-C uses both `readline`'s `SIGINT` and a process-level `SIGINT` fallback** (idempotent),
+  because Bun's `readline` may not emit `SIGINT`; verified the process handler receives the
+  signal. The full TTY interrupt UX still wants a human check in a real terminal.
+
 ## Alternatives considered
 
 - **Ink + React full-screen panes.** More "dashboard"-like, gives flexbox layout and

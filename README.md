@@ -54,6 +54,13 @@ AGENT_PROVIDER=anthropic bun run agent "list src/ then explain engine.ts"
 AGENT_PROVIDER=azure     bun run agent "list src/ then explain engine.ts"
 ```
 
+For a persistent, multi-turn session, use the interactive TUI — same engine,
+a REPL front-end (type a task, `/exit` to quit, `Ctrl-C` to interrupt a run):
+
+```bash
+bun run tui
+```
+
 Writing a file is high-risk, so under the default policy the agent asks before
 `write_file` runs. To give it external tools, drop an `mcp.json` in the cwd (see
 [`mcp.json.example`](mcp.json.example)); each server's tools appear as

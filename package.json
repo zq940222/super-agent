@@ -7,6 +7,7 @@
   "module": "src/index.ts",
   "scripts": {
     "agent": "bun run src/cli/main.ts",
+    "tui": "bun run src/tui/main.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

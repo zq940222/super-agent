@@ -47,6 +47,13 @@ AGENT_PROVIDER=anthropic bun run agent "列出 src/，然后解释 engine.ts"
 AGENT_PROVIDER=azure     bun run agent "列出 src/，然后解释 engine.ts"
 ```
 
+想要常驻的多轮对话，用交互式 TUI——同一个引擎，REPL 前端（输入任务，`/exit` 退出，
+`Ctrl-C` 中断当前任务）：
+
+```bash
+bun run tui
+```
+
 写文件是高风险操作，默认策略下 agent 在执行 `write_file` 前会先问你。想给它外部工具，
 在当前目录放一个 `mcp.json`（见 [`mcp.json.example`](mcp.json.example)）；每个服务器的
 工具会以 `mcp__<服务器>__<工具>` 出现，并和其它工具一样受权限门管辖。
