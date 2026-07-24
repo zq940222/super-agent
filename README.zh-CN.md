@@ -3,9 +3,9 @@
 [English](README.md) · **简体中文**
 
 一个用 TypeScript **从零手写**的通用任务 agent，目的是在动手中学习 agent 架构。
-它具备：归一化的消息模型、可插拔的模型后端（OpenAI + Anthropic）、工具注册表、
-权限门、上下文压缩、会话持久化、MCP 客户端、子代理、以及可自我编写的技能（skills）
-——通过九个小而受测的阶段逐步搭起来。运行在 [Bun](https://bun.sh) 上。
+它具备：归一化的消息模型、可插拔的模型后端（OpenAI / Anthropic / Azure OpenAI）、
+工具注册表、权限门、上下文压缩、会话持久化、MCP 客户端、子代理、以及可自我编写的技能（skills）
+——通过十个小而受测的阶段逐步搭起来。运行在 [Bun](https://bun.sh) 上。
 
 第一次来？先看 **[新读者导览](docs/GUIDE.md)**。设计背后的思考在
 [`docs/agent-research.md`](docs/agent-research.md)（Claude Code、Codex CLI、
@@ -15,8 +15,8 @@ OpenClaw、Hermes 是怎么造的）和 [`docs/our-agent-design.md`](docs/our-ag
 ## 亮点
 
 - **一个"笨"循环，多个后端。** 单一的 `runAgent` ReAct 循环
-  （`while stop_reason == tool_use`，`maxSteps` 兜底）按配置驱动 OpenAI 或
-  Anthropic；每个 adapter 把各家的线格式差异藏在内部。
+  （`while stop_reason == tool_use`，`maxSteps` 兜底）按配置驱动 OpenAI /
+  Anthropic / Azure OpenAI；每个 adapter 把各家的线格式差异藏在内部。
 - **权限在 harness 层，不在 prompt 里。** 一个策略（`deny → ask → allow`，按模式 +
   每个工具的风险等级）决定什么能跑；高风险工具触发 human-in-the-loop 审批。
   模型只能*请求*，只有策略能*放行*。
@@ -44,6 +44,7 @@ echo "总结一下 ./README.md" | bun run agent
 
 # 按配置切后端——同一个循环，不同模型：
 AGENT_PROVIDER=anthropic bun run agent "列出 src/，然后解释 engine.ts"
+AGENT_PROVIDER=azure     bun run agent "列出 src/，然后解释 engine.ts"
 ```
 
 写文件是高风险操作，默认策略下 agent 在执行 `write_file` 前会先问你。想给它外部工具，
@@ -67,12 +68,13 @@ bun run typecheck   # tsc --noEmit（TypeScript 7）
 
 | 变量 | 用途 | 默认 |
 |---|---|---|
-| `AGENT_PROVIDER` | 后端：`openai` 或 `anthropic` | `openai` |
+| `AGENT_PROVIDER` | 后端：`openai`、`anthropic` 或 `azure` | `openai` |
 | `AGENT_PERMISSION_MODE` | `default`（询问）、`auto`（全放行）、`readonly`（拒绝写） | `default` |
 | `AGENT_MAX_CONTEXT_TOKENS` | 估算超过此值就压缩上下文 | 内置（默认休眠） |
 | `AGENT_SKILLS_DIR` | 可复用技能（`SKILL.md`）存放目录 | `.agent/skills` |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | OpenAI 后端 | 模型 `gpt-4o-mini` |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` / `ANTHROPIC_BASE_URL` | Anthropic 后端 | 模型 `claude-sonnet-5` |
+| `AZURE_OPENAI_API_KEY` / `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_DEPLOYMENT` / `AZURE_OPENAI_API_VERSION` | Azure OpenAI 后端 | api-version `2025-04-01-preview` |
 
 密钥只从环境变量（或 `.env`）读取——绝不写进代码。
 
@@ -89,6 +91,7 @@ src/
 │  ├─ provider.ts    ModelProvider 接口（可插拔接缝）
 │  ├─ openai.ts      OpenAI adapter + 纯归一化函数
 │  ├─ anthropic.ts   Anthropic adapter + 纯归一化函数
+│  ├─ azure.ts       Azure OpenAI adapter（复用 OpenAI 的归一化函数）
 │  └─ factory.ts     createProvider(name) —— 按配置选后端
 ├─ permissions/
 │  └─ gate.ts        PermissionPolicy —— deny→ask→allow，按模式 + 风险
@@ -128,10 +131,11 @@ src/
 | P7 | MCP 客户端 | 所有工具来源走同一门 |
 | P8 | 子代理：`spawn_agent` | 上下文隔离、orchestrator-worker |
 | P9 | 技能：find / read / create | 自我扩展、skills ≠ tools |
+| P10 | Azure OpenAI 后端 | api-key 鉴权、api-version、deployment |
 
 ## 状态与边界
 
-到 P9 为止功能完整。有意延后（见设计文档）：本地（Ollama/LM Studio）后端、流式输出、
+到 P10 为止功能完整。有意延后（见设计文档）：本地（Ollama/LM Studio）后端、流式输出、
 `bash` 工具、内容级提示注入扫描、MCP HTTP 传输、把已存会话 resume 回活循环、共享技能注册中心。
 
 为学习而造——不是一个提供支持的产品。

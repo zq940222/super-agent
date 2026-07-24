@@ -127,6 +127,7 @@ src/
 | P7 MCP | JSON-RPC、tools/list 聚合（§4.6） | `mcp/client.ts` `mcp/register.ts` | `mcp-client.test.ts` `mcp-register.test.ts` |
 | P8 子代理 | 上下文隔离、orchestrator-worker（§4.4） | `agents/subagent.ts` | `subagent.test.ts` |
 | P9 技能 | 自我扩展、skills ≠ tools（§3.3、研究里各 agent 的 skills 设计） | `skills/store.ts` `skills/tools.ts` | `skills-store.test.ts` `skills-tools.test.ts` |
+| P10 Azure 后端 | api-key 鉴权、api-version、deployment（§4.6 可插拔） | `providers/azure.ts` | `azure.test.ts` |
 
 每个阶段对应一个 GitHub issue 和一个 squash 合并的 PR，提交历史本身就是一条清晰的学习时间线
 （`git log --oneline`）。
@@ -141,7 +142,9 @@ src/
 
 **加一个后端**：实现 `ModelProvider`（一个 `generate(req)` 方法），在 adapter 里把该家的
 线格式归一化成我们的类型；在 `factory.ts` 里登记。引擎不用动。参考
-[`providers/anthropic.ts`](../src/providers/anthropic.ts)。
+[`providers/anthropic.ts`](../src/providers/anthropic.ts)。若某家和 OpenAI 线格式相同
+（如 Azure OpenAI），可直接**复用** OpenAI 的归一化函数、只改客户端构造——见
+[`providers/azure.ts`](../src/providers/azure.ts)。
 
 **接一个 MCP 服务器**：在当前目录放 `mcp.json`（见 `mcp.json.example`）。CLI 启动时会连接、
 把它的工具注册进 registry（命名空间 `mcp__<server>__<tool>`，默认 `high` 风险）。

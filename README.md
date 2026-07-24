@@ -4,7 +4,7 @@
 
 A general-purpose task agent built **from scratch** in TypeScript, to learn agent
 architecture hands-on. It has a normalized message model, pluggable model
-backends (OpenAI + Anthropic), a tool registry, a permission gate, context
+backends (OpenAI, Anthropic, Azure OpenAI), a tool registry, a permission gate, context
 compaction, session persistence, an MCP client, subagents, and self-authored
 skills — assembled over nine small, tested phases. Runs on [Bun](https://bun.sh).
 
@@ -16,8 +16,9 @@ Code, Codex CLI, OpenClaw, and Hermes are built) and
 ## Highlights
 
 - **One dumb loop, many backends.** A single `runAgent` ReAct loop
-  (`while stop_reason == tool_use`, capped by `maxSteps`) drives OpenAI or
-  Anthropic — chosen by config. Each adapter hides its wire-format differences.
+  (`while stop_reason == tool_use`, capped by `maxSteps`) drives OpenAI,
+  Anthropic, or Azure OpenAI — chosen by config. Each adapter hides its
+  wire-format differences.
 - **Permissions in the harness, not the prompt.** A policy (`deny → ask → allow`,
   by mode + per-tool risk) decides what runs; risky tools trigger human-in-the-loop
   approval. The model can *ask*; only the policy *allows*.
@@ -50,6 +51,7 @@ echo "summarize ./README.md" | bun run agent
 
 # switch backend by config — same loop, different model:
 AGENT_PROVIDER=anthropic bun run agent "list src/ then explain engine.ts"
+AGENT_PROVIDER=azure     bun run agent "list src/ then explain engine.ts"
 ```
 
 Writing a file is high-risk, so under the default policy the agent asks before
@@ -75,12 +77,13 @@ Environment variables (see [`.env.example`](.env.example)):
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `AGENT_PROVIDER` | Backend: `openai` or `anthropic` | `openai` |
+| `AGENT_PROVIDER` | Backend: `openai`, `anthropic`, or `azure` | `openai` |
 | `AGENT_PERMISSION_MODE` | `default` (ask), `auto` (allow all), `readonly` (deny writes) | `default` |
 | `AGENT_MAX_CONTEXT_TOKENS` | Compact once the estimate exceeds this | built-in (dormant) |
 | `AGENT_SKILLS_DIR` | Where reusable `SKILL.md` skills live | `.agent/skills` |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | OpenAI backend | model `gpt-4o-mini` |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` / `ANTHROPIC_BASE_URL` | Anthropic backend | model `claude-sonnet-5` |
+| `AZURE_OPENAI_API_KEY` / `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_DEPLOYMENT` / `AZURE_OPENAI_API_VERSION` | Azure OpenAI backend | api-version `2025-04-01-preview` |
 
 Secrets are read only from the environment (or `.env`) — never hard-code them.
 
@@ -97,6 +100,7 @@ src/
 │  ├─ provider.ts    ModelProvider interface (the pluggable seam)
 │  ├─ openai.ts      OpenAI adapter + pure wire-format normalizers
 │  ├─ anthropic.ts   Anthropic adapter + pure wire-format normalizers
+│  ├─ azure.ts       Azure OpenAI adapter (reuses the OpenAI normalizers)
 │  └─ factory.ts     createProvider(name) — picks a backend by config
 ├─ permissions/
 │  └─ gate.ts        PermissionPolicy — deny→ask→allow by mode + risk
@@ -136,10 +140,11 @@ Each phase is one merged PR and turns a researched principle into tested code:
 | P7 | MCP client | one gate for every tool source |
 | P8 | subagents: `spawn_agent` | context isolation, orchestrator-worker |
 | P9 | skills: find / read / create | self-extension, skills ≠ tools |
+| P10 | Azure OpenAI backend | api-key auth, api-version, deployments |
 
 ## Status & limits
 
-Feature-complete through P9. Deliberately deferred (see the design doc): a local
+Feature-complete through P10. Deliberately deferred (see the design doc): a local
 (Ollama/LM Studio) backend, streaming, a `bash` tool, content-level
 prompt-injection scanning, MCP HTTP transport, resuming a saved session into
 the live loop, and a shared skill registry.
