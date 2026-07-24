@@ -8,8 +8,8 @@
 
 import { z } from "zod";
 import { readdir } from "node:fs/promises";
-import { resolve } from "node:path";
 import { defineTool } from "./registry";
+import { resolveInWorkspace } from "./workspace";
 
 export const LIST_DIR_MAX_ENTRIES = 200;
 
@@ -27,7 +27,7 @@ export const listDirTool = defineTool({
       .describe("Directory path, relative to the working directory or absolute. Defaults to '.'."),
   }),
   handler: async ({ path }, ctx) => {
-    const abs = resolve(ctx.cwd, path);
+    const abs = resolveInWorkspace(ctx, path);
     const entries = await readdir(abs, { withFileTypes: true });
     const names = entries.map((e) => (e.isDirectory() ? `${e.name}/` : e.name)).sort();
     if (names.length === 0) return "(empty directory)";

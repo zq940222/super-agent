@@ -11,8 +11,8 @@
 
 import { z } from "zod";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { defineTool } from "./registry";
+import { resolveInWorkspace } from "./workspace";
 
 /** Max bytes returned to the model before truncation kicks in. */
 export const READ_FILE_MAX_BYTES = 30_000;
@@ -30,7 +30,7 @@ export const readFileTool = defineTool({
       .describe("Path to the file, relative to the working directory or absolute."),
   }),
   handler: async ({ path }, ctx) => {
-    const abs = resolve(ctx.cwd, path);
+    const abs = resolveInWorkspace(ctx, path);
     const buf = await readFile(abs);
     if (buf.byteLength > READ_FILE_MAX_BYTES) {
       const head = buf.subarray(0, READ_FILE_MAX_BYTES).toString("utf8");

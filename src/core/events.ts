@@ -12,6 +12,8 @@ export type AgentEvent =
   | { type: "thinking"; text: string }
   | { type: "tool_call"; id: string; name: string; input: unknown }
   | { type: "tool_result"; toolUseId: string; name: string; content: string; isError: boolean }
+  | { type: "permission_request"; name: string; input: unknown; risk: string }
+  | { type: "permission_decision"; name: string; decision: "allow" | "deny" }
   | { type: "step_complete"; step: number; stopReason: string }
   | { type: "done"; text: string; steps: number }
   | { type: "error"; message: string };

@@ -1,26 +1,24 @@
 /**
- * The agent loop — P2.
+ * The agent loop — P2, with the permission gate added in P5.
  *
- * Generalizes P1's single round-trip into a real ReAct loop: repeat
- * `model turn → execute tools → feed results back` until the model answers
- * without calling a tool (`end_turn`), bounded by a hard `maxSteps` cap.
+ * Repeats `model turn → execute tools → feed results back` until the model
+ * answers without a tool (`end_turn`), bounded by a hard `maxSteps` cap.
  *
- * Termination:
- *   - `end_turn`        → done, `stoppedBy: "end_turn"`.
- *   - `maxSteps` reached → stop with the partial result, `stoppedBy: "max_steps"`,
- *                          and an `error` event. Always keep the hard cap.
+ * Before any tool runs, a PermissionPolicy classifies it as allow / ask / deny
+ * (P5). `ask` invokes the HITL `approve` callback; with no approver, `ask` is
+ * treated as deny (safe default). A denied tool returns an `isError` result and
+ * the loop CONTINUES, so the model is told and can adapt. Permission decisions
+ * for a turn are resolved sequentially (so HITL prompts don't interleave);
+ * execution of the allowed tools stays parallel.
  *
- * Error recovery: a tool that errors (unknown / invalid input / throws) returns
- * a `tool_result` with `isError: true` and the loop CONTINUES, so the model can
- * react — a bad tool call never crashes the run.
- *
- * See docs/our-agent-design.md §4 and issue #3.
+ * See docs/our-agent-design.md §4, and issues #3 (loop) and #7 (permissions).
  */
 
 import type { AssistantTurn, Message, ToolResultBlock, ToolUseBlock } from "./types";
 import { textOf, toolResults, toolUsesOf, userText } from "./types";
 import type { ModelProvider } from "../providers/provider";
 import type { ToolContext, ToolRegistry } from "../tools/registry";
+import { type Approver, PermissionPolicy } from "../permissions/gate";
 import { EventEmitter } from "./events";
 
 export interface RunOptions {
@@ -28,9 +26,15 @@ export interface RunOptions {
   registry: ToolRegistry;
   system?: string;
   cwd?: string;
+  /** If set, file tools reject paths escaping it (passed to ToolContext). */
+  workspaceRoot?: string;
   maxTokens?: number;
   /** Hard cap on model turns. Default 10. */
   maxSteps?: number;
+  /** How tool calls are gated. Default: PermissionPolicy() (mode "default"). */
+  policy?: PermissionPolicy;
+  /** HITL callback for `ask` decisions. Absent ⇒ `ask` is denied. */
+  approve?: Approver;
   events?: EventEmitter;
 }
 
@@ -39,20 +43,20 @@ export type StoppedBy = "end_turn" | "max_steps";
 export interface RunResult {
   text: string;
   messages: Message[];
-  /** Model turns taken. */
   steps: number;
   stoppedBy: StoppedBy;
 }
 
 export async function runAgent(userInput: string, opts: RunOptions): Promise<RunResult> {
   const events = opts.events ?? new EventEmitter();
-  const ctx: ToolContext = { cwd: opts.cwd ?? process.cwd() };
+  const ctx: ToolContext = { cwd: opts.cwd ?? process.cwd(), workspaceRoot: opts.workspaceRoot };
   const toolSpecs = opts.registry.list();
+  const policy = opts.policy ?? new PermissionPolicy();
   const maxSteps = opts.maxSteps ?? 10;
   const messages: Message[] = [userText(userInput)];
   let lastTurn: AssistantTurn | undefined;
 
-  for (let step = 1; step <= maxSteps; step++) {
+  async function runTurn(step: number): Promise<AssistantTurn> {
     events.emit({ type: "turn_start", step });
     const turn = await opts.provider.generate({
       system: opts.system,
@@ -63,6 +67,11 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
     lastTurn = turn;
     messages.push(turn.message);
     emitTurnBlocks(turn, events);
+    return turn;
+  }
+
+  for (let step = 1; step <= maxSteps; step++) {
+    const turn = await runTurn(step);
 
     if (turn.stopReason !== "tool_use") {
       const text = textOf(turn.message);
@@ -71,14 +80,12 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
       return { text, messages, steps: step, stoppedBy: "end_turn" };
     }
 
-    // Execute every requested tool in parallel; errors come back as results.
     const uses = toolUsesOf(turn.message);
-    const results = await Promise.all(uses.map((u) => executeTool(u, opts.registry, ctx, events)));
+    const results = await gateAndExecute(uses, opts.registry, policy, opts.approve, ctx, events);
     messages.push(toolResults(results));
     events.emit({ type: "step_complete", step, stopReason: turn.stopReason });
   }
 
-  // Loop exhausted while the model still wanted tools.
   const text = lastTurn ? textOf(lastTurn.message) : "";
   events.emit({ type: "error", message: `Reached maxSteps (${maxSteps}) without completing.` });
   events.emit({ type: "done", text, steps: maxSteps });
@@ -95,6 +102,70 @@ function emitTurnBlocks(turn: AssistantTurn, events: EventEmitter): void {
       events.emit({ type: "tool_call", id: block.id, name: block.name, input: block.input });
     }
   }
+}
+
+interface Plan {
+  use: ToolUseBlock;
+  allowed: boolean;
+  reason?: string;
+}
+
+/**
+ * Decide permissions sequentially (HITL prompts must not interleave), then run
+ * the allowed tools in parallel. Denied tools become error results.
+ */
+async function gateAndExecute(
+  uses: ToolUseBlock[],
+  registry: ToolRegistry,
+  policy: PermissionPolicy,
+  approve: Approver | undefined,
+  ctx: ToolContext,
+  events: EventEmitter,
+): Promise<ToolResultBlock[]> {
+  const plans: Plan[] = [];
+  for (const use of uses) {
+    const tool = registry.get(use.name);
+    // Unknown tool: let executeTool produce the "Unknown tool" error result.
+    if (!tool) {
+      plans.push({ use, allowed: true });
+      continue;
+    }
+
+    const decision = policy.decide({ name: use.name, risk: tool.risk });
+    if (decision === "allow") {
+      plans.push({ use, allowed: true });
+      continue;
+    }
+    if (decision === "deny") {
+      events.emit({ type: "permission_decision", name: use.name, decision: "deny" });
+      plans.push({ use, allowed: false, reason: "denied by policy" });
+      continue;
+    }
+
+    // decision === "ask" → human-in-the-loop
+    events.emit({ type: "permission_request", name: use.name, input: use.input, risk: tool.risk });
+    const ok = approve ? await approve({ name: use.name, input: use.input, risk: tool.risk }) : false;
+    events.emit({ type: "permission_decision", name: use.name, decision: ok ? "allow" : "deny" });
+    plans.push(
+      ok
+        ? { use, allowed: true }
+        : { use, allowed: false, reason: approve ? "denied by user" : "no approver configured" },
+    );
+  }
+
+  return Promise.all(
+    plans.map(async (p) => {
+      if (p.allowed) return executeTool(p.use, registry, ctx, events);
+      const block: ToolResultBlock = {
+        type: "tool_result",
+        toolUseId: p.use.id,
+        content: `Permission denied: ${p.use.name} — ${p.reason ?? "not allowed"}`,
+        isError: true,
+      };
+      events.emit({ type: "tool_result", toolUseId: p.use.id, name: p.use.name, content: block.content, isError: true });
+      return block;
+    }),
+  );
 }
 
 async function executeTool(
