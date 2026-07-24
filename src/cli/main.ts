@@ -8,28 +8,9 @@
 
 import { runAgent } from "../core/engine";
 import { EventEmitter, type AgentEvent } from "../core/events";
-import { createProvider } from "../providers/factory";
-import type { ModelProvider } from "../providers/provider";
-import { PermissionPolicy, type PermissionMode, type PermissionRequest } from "../permissions/gate";
-import { connectMcpServer } from "../mcp/register";
-import type { McpClient } from "../mcp/client";
-import { createSubagentTool } from "../agents/subagent";
-import { SkillStore } from "../skills/store";
-import { createSkillTools, skillsCatalog } from "../skills/tools";
+import { type PermissionMode, type PermissionRequest } from "../permissions/gate";
+import { bootstrap, type Runtime } from "../runtime/bootstrap";
 import { createRollout } from "../session/rollout";
-import { readFileTool } from "../tools/read-file";
-import { listDirTool } from "../tools/list-dir";
-import { writeFileTool } from "../tools/write-file";
-import { ToolRegistry } from "../tools/registry";
-
-const SYSTEM = [
-  "You are super-agent, a general-purpose assistant running in a terminal.",
-  "You can call tools: list_dir to explore directories, read_file to read files,",
-  "write_file to create or overwrite files, and spawn_agent to delegate a",
-  "self-contained subtask to a fresh subagent (which returns only its final answer).",
-  "Break the task into steps, use tools to gather what you need,",
-  "and when you have enough information, answer the user directly and concisely.",
-].join(" ");
 
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
@@ -97,34 +78,23 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  let provider: ModelProvider;
+  const mode = (process.env.AGENT_PERMISSION_MODE as PermissionMode) || "default";
+
+  // All session-scoped wiring lives in the shared bootstrap; the CLI keeps only
+  // its view (render/renderChild) and the per-run main-loop event emitter.
+  let runtime: Runtime;
   try {
-    provider = createProvider();
+    runtime = await bootstrap({
+      mode,
+      approve,
+      onChildEvent: renderChild,
+      log: (m) => process.stdout.write(`${DIM}(${m})${RESET}\n`),
+      logError: (m) => process.stderr.write(`${DIM}(${m})${RESET}\n`),
+    });
   } catch (err) {
     process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(1);
   }
-  const mode = (process.env.AGENT_PERMISSION_MODE as PermissionMode) || "default";
-  process.stdout.write(`${DIM}(backend: ${provider.name} · permissions: ${mode})${RESET}\n`);
-
-  const registry = new ToolRegistry()
-    .register(readFileTool)
-    .register(listDirTool)
-    .register(writeFileTool);
-
-  // Skills (P9): reusable procedure docs the agent can find, read, and author.
-  const skills = new SkillStore(process.env.AGENT_SKILLS_DIR || ".agent/skills");
-  for (const tool of createSkillTools(skills)) registry.register(tool);
-  const system = `${SYSTEM}\n\n${await skillsCatalog(skills)}`;
-
-  const mcpClients = await loadMcpServers(registry);
-  const policy = new PermissionPolicy({ mode });
-
-  // spawn_agent: give subagents the current toolset; render their work indented.
-  const childEvents = new EventEmitter().on(renderChild);
-  registry.register(
-    createSubagentTool({ provider, tools: registry.all(), system, policy, approve, events: childEvents, maxSteps: 10 }),
-  );
 
   const events = new EventEmitter().on(render);
 
@@ -134,10 +104,10 @@ async function main(): Promise<void> {
 
   try {
     await runAgent(prompt, {
-      provider,
-      registry,
-      system,
-      policy,
+      provider: runtime.provider,
+      registry: runtime.registry,
+      system: runtime.system,
+      policy: runtime.policy,
       approve,
       workspaceRoot: process.cwd(),
       maxContextTokens,
@@ -149,32 +119,8 @@ async function main(): Promise<void> {
     process.stderr.write(`error: ${err instanceof Error ? err.message : String(err)}\n`);
     process.exitCode = 1;
   } finally {
-    await Promise.all(mcpClients.map((c) => c.close()));
+    await runtime.close();
   }
-}
-
-/** Connect any MCP servers declared in ./mcp.json and register their tools. */
-async function loadMcpServers(registry: ToolRegistry): Promise<McpClient[]> {
-  const file = Bun.file("mcp.json");
-  if (!(await file.exists())) return [];
-  const clients: McpClient[] = [];
-  try {
-    const config = (await file.json()) as {
-      servers?: Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
-    };
-    for (const [name, cfg] of Object.entries(config.servers ?? {})) {
-      try {
-        const { client, toolNames } = await connectMcpServer(registry, { name, ...cfg });
-        clients.push(client);
-        process.stdout.write(`${DIM}(mcp: ${name} → ${toolNames.length} tool(s))${RESET}\n`);
-      } catch (err) {
-        process.stderr.write(`${DIM}(mcp: failed to connect "${name}": ${err instanceof Error ? err.message : String(err)})${RESET}\n`);
-      }
-    }
-  } catch (err) {
-    process.stderr.write(`${DIM}(mcp: could not read mcp.json: ${err instanceof Error ? err.message : String(err)})${RESET}\n`);
-  }
-  return clients;
 }
 
 /** HITL approver: prompt on the terminal. Non-interactive (piped) ⇒ deny. */

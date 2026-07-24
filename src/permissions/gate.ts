@@ -53,6 +53,17 @@ export class PermissionPolicy {
     this.deny = new Set(opts.deny ?? []);
   }
 
+  /**
+   * Grant a tool an always-allow rule for the rest of the session — e.g. the
+   * HITL "always allow" choice, so a repeated call stops prompting. Precedence
+   * is unchanged: an explicit `deny`/`ask` rule still wins (see `decide`), and
+   * `readonly` denies risky tools outright without ever prompting, so this can
+   * only take effect after an `ask` actually fired. See ADR-0001 §5.
+   */
+  allowForSession(name: string): void {
+    this.allow.add(name);
+  }
+
   decide(tool: { name: string; risk: Risk }): Decision {
     if (this.deny.has(tool.name)) return "deny";
     if (this.ask.has(tool.name)) return "ask";
