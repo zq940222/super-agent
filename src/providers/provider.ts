@@ -18,6 +18,13 @@ export interface GenerateRequest {
   tools?: ToolSpec[];
   toolChoice?: "auto" | "required" | "none" | { name: string };
   maxTokens?: number;
+  /**
+   * Cancels the request already in flight. Adapters forward it to the SDK call;
+   * on abort the SDK rejects and the engine reports the run as cancelled. This
+   * is what makes Ctrl-C snappy — without it, cancellation only lands between
+   * steps, after the current model call returns. See ADR-0001 §3.
+   */
+  signal?: AbortSignal;
 }
 
 export interface ModelProvider {

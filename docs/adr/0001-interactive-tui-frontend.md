@@ -68,18 +68,24 @@ new user input, and `recordMeta` would run every turn. The contract is therefore
 
 This keeps the JSONL a faithful, replayable transcript of the whole conversation.
 
-### 3. Cancellation: cooperative, between-steps, for v1
+### 3. Cancellation: cooperative between-steps (v1), in-flight (P-tui-5)
 
 `runAgent` gains an optional `signal?: AbortSignal`. The loop checks `signal.aborted` at
 the top of each step and after tool execution; on abort it stops cleanly and emits a new
 `{ type: "cancelled"; step }` event. `Ctrl-C` in the REPL aborts the current run and
 returns to the prompt.
 
-**Known limitation, stated on purpose:** `ModelProvider.generate()` returns a whole turn
-and `GenerateRequest` has no `signal`, so a model call already **in flight** finishes
-before the abort takes effect (a few seconds of lag). Snappy, in-flight interruption
-requires threading `AbortSignal` through `GenerateRequest` and all three adapters
-(openai / anthropic / azure) — deferred to a follow-up (P-tui-5).
+**v1 (P-tui-4) shipped cooperative, between-steps cancellation only:** a model call already
+in flight finished before the abort landed (a few seconds of lag), because
+`GenerateRequest` had no `signal`.
+
+**P-tui-5 made it in-flight (snappy):** `GenerateRequest` now carries `signal`, which the
+engine passes to `provider.generate` and each adapter (openai / anthropic / azure) forwards
+to its SDK call. Both model call sites are covered — the per-turn generation *and* the
+compaction summarizer's own call. A mid-flight abort rejects the SDK request; the engine
+detects it by *signal state* (`opts.signal?.aborted`, not error-type matching —
+provider-agnostic) and reports a clean `cancelled` rather than throwing. Non-abort errors
+still propagate.
 
 ### 4. Rendering rule: render `text`, treat `done` as a terminal marker
 
@@ -112,7 +118,7 @@ second thing to print).
 
 **Negative / accepted trade-offs**
 
-- Ctrl-C is laggy while a model call is in flight (see §3) until the follow-up lands.
+- Ctrl-C is now in-flight (P-tui-5) — a model call aborts immediately, not just between steps.
 - No token-level streaming (providers don't stream yet) — the TUI renders at turn
   granularity: a spinner while the model thinks, then text appears. Streaming is a
   separate, larger effort.

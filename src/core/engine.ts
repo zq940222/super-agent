@@ -109,6 +109,7 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
       messages,
       tools: toolSpecs,
       maxTokens: opts.maxTokens,
+      signal: opts.signal,
     });
     lastTurn = turn;
     messages.push(turn.message);
@@ -119,7 +120,16 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
 
   for (let step = 1; step <= maxSteps; step++) {
     if (opts.signal?.aborted) return cancelled(step - 1);
-    const turn = await runTurn(step);
+
+    let turn: AssistantTurn;
+    try {
+      turn = await runTurn(step);
+    } catch (err) {
+      // A mid-flight provider abort surfaces as a throw. If it's our signal,
+      // report a clean cancellation; any other error is a real failure.
+      if (opts.signal?.aborted) return cancelled(step - 1);
+      throw err;
+    }
 
     if (turn.stopReason !== "tool_use") {
       const text = textOf(turn.message);
@@ -140,7 +150,13 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
     // Compaction (P4): keep the working context under budget between steps.
     if (estimateTokens(messages) > budget) {
       const beforeTokens = estimateTokens(messages);
-      messages = await compact(messages, summarize, { keepRecent: opts.keepRecent });
+      try {
+        messages = await compact(messages, summarize, { keepRecent: opts.keepRecent, signal: opts.signal });
+      } catch (err) {
+        // The summarizer is its own in-flight model call; treat its abort as cancel.
+        if (opts.signal?.aborted) return cancelled(step);
+        throw err;
+      }
       const afterTokens = estimateTokens(messages);
       if (afterTokens < beforeTokens) events.emit({ type: "compaction", beforeTokens, afterTokens });
     }

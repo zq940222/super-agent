@@ -27,7 +27,9 @@ class ScriptedProvider implements ModelProvider {
   private i = 0;
   constructor(private turns: AssistantTurn[]) {}
   async generate(req: GenerateRequest): Promise<AssistantTurn> {
-    this.calls.push(structuredClone(req));
+    // Snapshot messages per-turn; keep `signal` by reference (AbortSignal is not
+    // structured-cloneable, and now travels on the request — P-tui-5).
+    this.calls.push({ ...req, messages: structuredClone(req.messages) });
     const turn = this.turns[this.i++];
     if (!turn) throw new Error("ScriptedProvider ran out of scripted turns");
     return turn;
