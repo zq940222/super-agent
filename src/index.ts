@@ -4,6 +4,8 @@ export * from "./core/events";
 export * from "./core/engine";
 export * from "./core/compaction";
 export * from "./session/rollout";
+export * from "./mcp/client";
+export * from "./mcp/register";
 export * from "./providers/provider";
 export * from "./providers/openai";
 export * from "./providers/anthropic";

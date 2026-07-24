@@ -15,6 +15,10 @@ build/
 *.key
 *.pem
 
+# MCP server config (may reference local commands / secrets)
+mcp.json
+!mcp.json.example
+
 # Logs
 logs/
 *.log

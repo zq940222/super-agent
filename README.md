@@ -10,11 +10,12 @@ Codex CLI, OpenClaw, and Hermes are built) and
 
 ## Status
 
-**P4 — context management** ([issue #9](https://github.com/zq940222/super-agent/issues/9)):
-compaction (summarize old turns past a token budget, with an orphan-safe cut that
-never splits a `tool_use` from its `tool_result`) and append-only JSONL session
-rollout persistence. Prior: permissions (**P5**), multi-backend (**P6**),
-reasoning loop (**P2**), skeleton (**P1**). Roadmap remaining: P7 MCP, P8 subagents.
+**P7 — MCP client** ([issue #11](https://github.com/zq940222/super-agent/issues/11)):
+connect to MCP (Model Context Protocol) servers over a hand-rolled stdio
+JSON-RPC client, and register their tools into the same registry + permission
+pipeline as native tools (namespaced `mcp__<server>__<tool>`, gated by default).
+Prior: context management (**P4**), permissions (**P5**), multi-backend (**P6**),
+reasoning loop (**P2**), skeleton (**P1**). Roadmap remaining: P8 subagents.
 
 Permissions are enforced by the engine, **not** the prompt — the model can ask
 to run a tool, but only the policy decides whether it does.
@@ -41,6 +42,10 @@ Writing a file is high-risk, so under the default policy the agent asks before
 `write_file` runs. Change the posture with `AGENT_PERMISSION_MODE`:
 `default` (ask), `auto` (allow everything — trusted/sandboxed only), or
 `readonly` (deny writes).
+
+To give the agent external tools, drop an `mcp.json` in the cwd (see
+`mcp.json.example`). Each server's tools appear as `mcp__<server>__<tool>` and
+are gated like any other tool.
 
 You'll see the agent decide to call `read_file`, the (truncated) result, and its
 final answer — the whole run rendered from the event stream.
@@ -79,6 +84,9 @@ src/
 │  └─ write-file.ts write_file (high-risk; gated by the permission policy)
 ├─ session/
 │  └─ rollout.ts   append-only JSONL session persistence
+├─ mcp/
+│  ├─ client.ts    minimal MCP stdio JSON-RPC client (initialize/list/call)
+│  └─ register.ts  connectMcpServer — register MCP tools into the registry
 └─ cli/main.ts     minimal terminal front-end
 ```
 
