@@ -10,11 +10,11 @@ Codex CLI, OpenClaw, and Hermes are built) and
 
 ## Status
 
-**P5 — permissions & safety** ([issue #7](https://github.com/zq940222/super-agent/issues/7)):
-a harness-layer permission gate (deny → ask → allow, by mode + per-tool `risk`),
-human-in-the-loop approval for risky tools, a high-risk `write_file` tool, and a
-workspace path boundary for file tools. Prior: multi-backend (**P6**), reasoning
-loop (**P2**), skeleton (**P1**). Roadmap remaining: P4 context, P7 MCP, P8 subagents.
+**P4 — context management** ([issue #9](https://github.com/zq940222/super-agent/issues/9)):
+compaction (summarize old turns past a token budget, with an orphan-safe cut that
+never splits a `tool_use` from its `tool_result`) and append-only JSONL session
+rollout persistence. Prior: permissions (**P5**), multi-backend (**P6**),
+reasoning loop (**P2**), skeleton (**P1**). Roadmap remaining: P7 MCP, P8 subagents.
 
 Permissions are enforced by the engine, **not** the prompt — the model can ask
 to run a tool, but only the policy decides whether it does.
@@ -60,9 +60,10 @@ The live OpenAI path has one opt-in smoke test that runs only when
 ```
 src/
 ├─ core/
-│  ├─ types.ts     Message / ContentBlock / AssistantTurn / ToolSpec (provider-neutral)
-│  ├─ events.ts    typed AgentEvent stream + emitter
-│  └─ engine.ts    runAgent — the ReAct loop (while tool_use, maxSteps cap)
+│  ├─ types.ts      Message / ContentBlock / AssistantTurn / ToolSpec (provider-neutral)
+│  ├─ events.ts     typed AgentEvent stream + emitter
+│  ├─ engine.ts     runAgent — the ReAct loop (while tool_use, maxSteps cap)
+│  └─ compaction.ts estimateTokens + compact (orphan-safe summarization)
 ├─ providers/
 │  ├─ provider.ts  ModelProvider interface (the pluggable seam)
 │  ├─ openai.ts    OpenAI adapter + pure wire-format normalizers
@@ -76,6 +77,8 @@ src/
 │  ├─ read-file.ts read_file (with built-in output truncation)
 │  ├─ list-dir.ts  list_dir (directory listing, capped)
 │  └─ write-file.ts write_file (high-risk; gated by the permission policy)
+├─ session/
+│  └─ rollout.ts   append-only JSONL session persistence
 └─ cli/main.ts     minimal terminal front-end
 ```
 

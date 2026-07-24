@@ -11,6 +11,7 @@ import { EventEmitter, type AgentEvent } from "../core/events";
 import { createProvider } from "../providers/factory";
 import type { ModelProvider } from "../providers/provider";
 import { PermissionPolicy, type PermissionMode, type PermissionRequest } from "../permissions/gate";
+import { createRollout } from "../session/rollout";
 import { readFileTool } from "../tools/read-file";
 import { listDirTool } from "../tools/list-dir";
 import { writeFileTool } from "../tools/write-file";
@@ -48,6 +49,9 @@ function render(event: AgentEvent): void {
     }
     case "permission_decision":
       process.stdout.write(`${DIM}  🔐 ${event.name} → ${event.decision}${RESET}\n`);
+      break;
+    case "compaction":
+      process.stdout.write(`${DIM}  ♻ compacted context ${event.beforeTokens}→${event.afterTokens} tokens${RESET}\n`);
       break;
     case "done":
       process.stdout.write(`\n${BOLD}${event.text}${RESET}\n`);
@@ -89,6 +93,10 @@ async function main(): Promise<void> {
   const policy = new PermissionPolicy({ mode });
   const events = new EventEmitter().on(render);
 
+  const sessionPath = `.agent/sessions/${Date.now()}.jsonl`;
+  const rollout = createRollout(sessionPath);
+  const maxContextTokens = Number(process.env.AGENT_MAX_CONTEXT_TOKENS) || undefined;
+
   try {
     await runAgent(prompt, {
       provider,
@@ -97,8 +105,11 @@ async function main(): Promise<void> {
       policy,
       approve,
       workspaceRoot: process.cwd(),
+      maxContextTokens,
+      rollout,
       events,
     });
+    process.stdout.write(`${DIM}(session: ${sessionPath})${RESET}\n`);
   } catch (err) {
     process.stderr.write(`error: ${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(1);
