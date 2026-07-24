@@ -1,0 +1,21 @@
+{
+  "name": "super-agent",
+  "version": "0.1.0",
+  "description": "A from-scratch, general-purpose task agent (TypeScript/Bun, pluggable model backends) built to learn agent architecture hands-on.",
+  "type": "module",
+  "private": true,
+  "module": "src/index.ts",
+  "scripts": {
+    "agent": "bun run src/cli/main.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "openai": "^6.49.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^7.0.2"
+  }
+}

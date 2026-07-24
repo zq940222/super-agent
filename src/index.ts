@@ -1,0 +1,8 @@
+/** Public surface of the agent library. */
+export * from "./core/types";
+export * from "./core/events";
+export * from "./core/engine";
+export * from "./providers/provider";
+export * from "./providers/openai";
+export * from "./tools/registry";
+export * from "./tools/read-file";
