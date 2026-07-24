@@ -38,3 +38,16 @@ test("a deny rule overrides an otherwise-allowing mode", () => {
   const p = new PermissionPolicy({ mode: "auto", deny: ["read_file"] });
   expect(p.decide(tool("read_file", "low"))).toBe("deny");
 });
+
+test("allowForSession turns a subsequent ask into an allow (the HITL 'always' choice)", () => {
+  const p = new PermissionPolicy(); // default mode
+  expect(p.decide(tool("write_file", "medium"))).toBe("ask");
+  p.allowForSession("write_file");
+  expect(p.decide(tool("write_file", "medium"))).toBe("allow");
+});
+
+test("allowForSession cannot punch through an explicit deny", () => {
+  const p = new PermissionPolicy({ deny: ["danger"] });
+  p.allowForSession("danger");
+  expect(p.decide(tool("danger", "low"))).toBe("deny");
+});
