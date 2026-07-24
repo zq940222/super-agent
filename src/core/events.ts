@@ -17,6 +17,7 @@ export type AgentEvent =
   | { type: "step_complete"; step: number; stopReason: string }
   | { type: "compaction"; beforeTokens: number; afterTokens: number }
   | { type: "done"; text: string; steps: number }
+  | { type: "cancelled"; step: number }
   | { type: "error"; message: string };
 
 export type EventHandler = (event: AgentEvent) => void;
