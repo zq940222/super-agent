@@ -1,17 +1,18 @@
 /**
- * The agent loop — P2, with the permission gate added in P5.
+ * The agent loop.
  *
  * Repeats `model turn → execute tools → feed results back` until the model
- * answers without a tool (`end_turn`), bounded by a hard `maxSteps` cap.
+ * answers without a tool (`end_turn`), bounded by a hard `maxSteps` cap (P2).
  *
  * Before any tool runs, a PermissionPolicy classifies it as allow / ask / deny
- * (P5). `ask` invokes the HITL `approve` callback; with no approver, `ask` is
- * treated as deny (safe default). A denied tool returns an `isError` result and
- * the loop CONTINUES, so the model is told and can adapt. Permission decisions
- * for a turn are resolved sequentially (so HITL prompts don't interleave);
- * execution of the allowed tools stays parallel.
+ * (P5). `ask` invokes the HITL `approve` callback; with no approver, `ask` is a
+ * deny. A denied tool returns an `isError` result and the loop CONTINUES.
  *
- * See docs/our-agent-design.md §4, and issues #3 (loop) and #7 (permissions).
+ * Between steps, if the estimated context exceeds `maxContextTokens`, the older
+ * history is compacted into a summary (P4). When a `rollout` is provided, the
+ * raw message stream (pre-compaction) is persisted as append-only JSONL.
+ *
+ * See docs/our-agent-design.md §4 and issues #3, #7, #9.
  */
 
 import type { AssistantTurn, Message, ToolResultBlock, ToolUseBlock } from "./types";
@@ -19,22 +20,32 @@ import { textOf, toolResults, toolUsesOf, userText } from "./types";
 import type { ModelProvider } from "../providers/provider";
 import type { ToolContext, ToolRegistry } from "../tools/registry";
 import { type Approver, PermissionPolicy } from "../permissions/gate";
+import { type Summarizer, compact, estimateTokens, providerSummarizer } from "./compaction";
+import type { RolloutRecorder } from "../session/rollout";
 import { EventEmitter } from "./events";
+
+/** Default context budget — high enough to stay dormant on short runs. */
+export const DEFAULT_MAX_CONTEXT_TOKENS = 96_000;
 
 export interface RunOptions {
   provider: ModelProvider;
   registry: ToolRegistry;
   system?: string;
   cwd?: string;
-  /** If set, file tools reject paths escaping it (passed to ToolContext). */
   workspaceRoot?: string;
   maxTokens?: number;
   /** Hard cap on model turns. Default 10. */
   maxSteps?: number;
-  /** How tool calls are gated. Default: PermissionPolicy() (mode "default"). */
   policy?: PermissionPolicy;
-  /** HITL callback for `ask` decisions. Absent ⇒ `ask` is denied. */
   approve?: Approver;
+  /** Compact when the estimate exceeds this. Default DEFAULT_MAX_CONTEXT_TOKENS. */
+  maxContextTokens?: number;
+  /** Recent messages kept verbatim during compaction. */
+  keepRecent?: number;
+  /** Override the summarizer (default: provider-based). */
+  summarize?: Summarizer;
+  /** If set, the raw message stream is persisted here. */
+  rollout?: RolloutRecorder;
   events?: EventEmitter;
 }
 
@@ -53,8 +64,18 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
   const toolSpecs = opts.registry.list();
   const policy = opts.policy ?? new PermissionPolicy();
   const maxSteps = opts.maxSteps ?? 10;
-  const messages: Message[] = [userText(userInput)];
+  const budget = opts.maxContextTokens ?? DEFAULT_MAX_CONTEXT_TOKENS;
+  const summarize = opts.summarize ?? providerSummarizer(opts.provider);
+
+  let messages: Message[] = [userText(userInput)];
   let lastTurn: AssistantTurn | undefined;
+
+  await opts.rollout?.recordMeta({ provider: opts.provider.name });
+  await record(messages[0]!);
+
+  async function record(message: Message): Promise<void> {
+    await opts.rollout?.recordMessage(message);
+  }
 
   async function runTurn(step: number): Promise<AssistantTurn> {
     events.emit({ type: "turn_start", step });
@@ -66,6 +87,7 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
     });
     lastTurn = turn;
     messages.push(turn.message);
+    await record(turn.message);
     emitTurnBlocks(turn, events);
     return turn;
   }
@@ -82,8 +104,18 @@ export async function runAgent(userInput: string, opts: RunOptions): Promise<Run
 
     const uses = toolUsesOf(turn.message);
     const results = await gateAndExecute(uses, opts.registry, policy, opts.approve, ctx, events);
-    messages.push(toolResults(results));
+    const resultsMessage = toolResults(results);
+    messages.push(resultsMessage);
+    await record(resultsMessage);
     events.emit({ type: "step_complete", step, stopReason: turn.stopReason });
+
+    // Compaction (P4): keep the working context under budget between steps.
+    if (estimateTokens(messages) > budget) {
+      const beforeTokens = estimateTokens(messages);
+      messages = await compact(messages, summarize, { keepRecent: opts.keepRecent });
+      const afterTokens = estimateTokens(messages);
+      if (afterTokens < beforeTokens) events.emit({ type: "compaction", beforeTokens, afterTokens });
+    }
   }
 
   const text = lastTurn ? textOf(lastTurn.message) : "";

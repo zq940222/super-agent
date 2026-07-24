@@ -25,6 +25,7 @@ yarn-error.log*
 
 # Runtime / agent session data
 .scratch/
+.agent/
 sessions/
 *.sqlite
 *.sqlite-*
