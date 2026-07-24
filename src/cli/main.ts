@@ -13,6 +13,7 @@ import type { ModelProvider } from "../providers/provider";
 import { PermissionPolicy, type PermissionMode, type PermissionRequest } from "../permissions/gate";
 import { connectMcpServer } from "../mcp/register";
 import type { McpClient } from "../mcp/client";
+import { createSubagentTool } from "../agents/subagent";
 import { createRollout } from "../session/rollout";
 import { readFileTool } from "../tools/read-file";
 import { listDirTool } from "../tools/list-dir";
@@ -22,7 +23,8 @@ import { ToolRegistry } from "../tools/registry";
 const SYSTEM = [
   "You are super-agent, a general-purpose assistant running in a terminal.",
   "You can call tools: list_dir to explore directories, read_file to read files,",
-  "and write_file to create or overwrite files.",
+  "write_file to create or overwrite files, and spawn_agent to delegate a",
+  "self-contained subtask to a fresh subagent (which returns only its final answer).",
   "Break the task into steps, use tools to gather what you need,",
   "and when you have enough information, answer the user directly and concisely.",
 ].join(" ");
@@ -64,6 +66,21 @@ function render(event: AgentEvent): void {
   }
 }
 
+/** Render a subagent's events, indented, so nested work is visible. */
+function renderChild(event: AgentEvent): void {
+  switch (event.type) {
+    case "tool_call":
+      process.stdout.write(`${DIM}    ↪ ${event.name}(${preview(JSON.stringify(event.input), 50)})${RESET}\n`);
+      break;
+    case "tool_result":
+      process.stdout.write(`${DIM}    ↪ ${event.isError ? "✗" : "·"} ${preview(event.content, 50)}${RESET}\n`);
+      break;
+    case "done":
+      process.stdout.write(`${DIM}    ↪ ⤶ ${preview(event.text, 60)}${RESET}\n`);
+      break;
+  }
+}
+
 async function readPrompt(): Promise<string> {
   const fromArgs = process.argv.slice(2).join(" ").trim();
   if (fromArgs) return fromArgs;
@@ -94,6 +111,13 @@ async function main(): Promise<void> {
     .register(writeFileTool);
   const mcpClients = await loadMcpServers(registry);
   const policy = new PermissionPolicy({ mode });
+
+  // spawn_agent: give subagents the current toolset; render their work indented.
+  const childEvents = new EventEmitter().on(renderChild);
+  registry.register(
+    createSubagentTool({ provider, tools: registry.all(), system: SYSTEM, policy, approve, events: childEvents, maxSteps: 10 }),
+  );
+
   const events = new EventEmitter().on(render);
 
   const sessionPath = `.agent/sessions/${Date.now()}.jsonl`;

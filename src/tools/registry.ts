@@ -56,6 +56,11 @@ export class ToolRegistry {
       .filter((t) => (t.check ? t.check() : true))
       .map((t) => t.spec);
   }
+
+  /** Snapshot of the registered tools (e.g. to seed a subagent's registry). */
+  all(): RegisteredTool[] {
+    return [...this.tools.values()];
+  }
 }
 
 /**

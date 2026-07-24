@@ -10,12 +10,16 @@ Codex CLI, OpenClaw, and Hermes are built) and
 
 ## Status
 
-**P7 — MCP client** ([issue #11](https://github.com/zq940222/super-agent/issues/11)):
-connect to MCP (Model Context Protocol) servers over a hand-rolled stdio
-JSON-RPC client, and register their tools into the same registry + permission
-pipeline as native tools (namespaced `mcp__<server>__<tool>`, gated by default).
-Prior: context management (**P4**), permissions (**P5**), multi-backend (**P6**),
-reasoning loop (**P2**), skeleton (**P1**). Roadmap remaining: P8 subagents.
+**Feature-complete** through the 8-phase build. Latest — **P8 — subagents**
+([issue #13](https://github.com/zq940222/super-agent/issues/13)): a `spawn_agent`
+tool delegates a self-contained subtask to a fresh child `runAgent` (isolated
+context — only the task goes in, only the final answer comes back), with a
+recursion cap; parallel delegation falls out of the engine's parallel tool calls.
+
+The phases: skeleton (**P1**) · reasoning loop (**P2**) · context management /
+compaction + session rollout (**P4**) · permissions & safety (**P5**) ·
+pluggable OpenAI + Anthropic backends (**P6**) · MCP client (**P7**) · subagents
+(**P8**). See `docs/agent-research.md` for the architecture study behind them.
 
 Permissions are enforced by the engine, **not** the prompt — the model can ask
 to run a tool, but only the policy decides whether it does.
@@ -87,6 +91,8 @@ src/
 ├─ mcp/
 │  ├─ client.ts    minimal MCP stdio JSON-RPC client (initialize/list/call)
 │  └─ register.ts  connectMcpServer — register MCP tools into the registry
+├─ agents/
+│  └─ subagent.ts  createSubagentTool — spawn_agent (isolated child runAgent)
 └─ cli/main.ts     minimal terminal front-end
 ```
 
