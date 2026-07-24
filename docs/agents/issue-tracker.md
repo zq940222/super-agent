@@ -2,7 +2,7 @@
 
 Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
-> Note: as of setup this repo has no GitHub remote yet. These `gh` commands activate once the repo is pushed to GitHub and a remote exists; `gh` infers the repo from `git remote -v` inside a clone.
+Repo: `zq940222/super-agent` (https://github.com/zq940222/super-agent). `gh` infers it from `git remote -v` when run inside the clone.
 
 ## Conventions
 
