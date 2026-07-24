@@ -8,7 +8,8 @@
 
 import { runAgent } from "../core/engine";
 import { EventEmitter, type AgentEvent } from "../core/events";
-import { OpenAIProvider } from "../providers/openai";
+import { createProvider } from "../providers/factory";
+import type { ModelProvider } from "../providers/provider";
 import { readFileTool } from "../tools/read-file";
 import { listDirTool } from "../tools/list-dir";
 import { ToolRegistry } from "../tools/registry";
@@ -65,13 +66,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  let provider: OpenAIProvider;
+  let provider: ModelProvider;
   try {
-    provider = new OpenAIProvider();
+    provider = createProvider();
   } catch (err) {
     process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(1);
   }
+  process.stdout.write(`${DIM}(backend: ${provider.name})${RESET}\n`);
 
   const registry = new ToolRegistry().register(readFileTool).register(listDirTool);
   const events = new EventEmitter().on(render);
