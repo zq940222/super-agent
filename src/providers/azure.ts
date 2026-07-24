@@ -15,7 +15,7 @@
 
 import OpenAI from "openai";
 import type { AssistantTurn } from "../core/types";
-import type { GenerateRequest, ModelProvider } from "./provider";
+import type { GenerateRequest, ModelProvider, StreamChunk } from "./provider";
 import { fromOpenAIResponse, toOpenAIMessages, toOpenAITools, toToolChoice, type OAIResponse } from "./openai";
 
 export interface AzureOpenAIProviderOptions {
@@ -78,18 +78,37 @@ export class AzureOpenAIProvider implements ModelProvider {
     });
   }
 
-  async generate(req: GenerateRequest): Promise<AssistantTurn> {
-    const messages = toOpenAIMessages(req.messages, req.system);
+  /** Shared request body — Azure differs from OpenAI only in `model` (deployment). */
+  private buildParams(req: GenerateRequest): Record<string, unknown> {
+    const params: Record<string, unknown> = {
+      model: this.deployment,
+      messages: toOpenAIMessages(req.messages, req.system),
+    };
     const tools = toOpenAITools(req.tools);
-
-    const params: Record<string, unknown> = { model: this.deployment, messages };
     if (tools) {
       params.tools = tools;
       params.tool_choice = toToolChoice(req.toolChoice) ?? "auto";
     }
     if (req.maxTokens) params.max_completion_tokens = req.maxTokens;
+    return params;
+  }
 
-    const resp = await this.client.chat.completions.create(params as any, { signal: req.signal });
+  async generate(req: GenerateRequest): Promise<AssistantTurn> {
+    const resp = await this.client.chat.completions.create(this.buildParams(req) as any, { signal: req.signal });
     return fromOpenAIResponse(resp as unknown as OAIResponse);
+  }
+
+  async *stream(req: GenerateRequest): AsyncIterable<StreamChunk> {
+    // Azure chat completions stream identically to OpenAI — same client, same
+    // chunk shape — so reuse the OpenAI normalizer on the assembled result.
+    // `include_usage` (streaming-only) keeps token usage on the `done` turn.
+    const body = { ...this.buildParams(req), stream_options: { include_usage: true } };
+    const stream = this.client.chat.completions.stream(body as any, { signal: req.signal });
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content;
+      if (delta) yield { type: "text_delta", text: delta };
+    }
+    const completion = await stream.finalChatCompletion();
+    yield { type: "done", turn: fromOpenAIResponse(completion as unknown as OAIResponse) };
   }
 }

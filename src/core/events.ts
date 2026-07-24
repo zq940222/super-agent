@@ -9,6 +9,7 @@
 export type AgentEvent =
   | { type: "turn_start"; step: number }
   | { type: "text"; text: string }
+  | { type: "text_delta"; text: string }
   | { type: "thinking"; text: string }
   | { type: "tool_call"; id: string; name: string; input: unknown }
   | { type: "tool_result"; toolUseId: string; name: string; content: string; isError: boolean }

@@ -18,7 +18,7 @@ import type {
   StopReason,
   ToolSpec,
 } from "../core/types";
-import type { GenerateRequest, ModelProvider } from "./provider";
+import type { GenerateRequest, ModelProvider, StreamChunk } from "./provider";
 
 // --- structural types for the Anthropic wire shape ---
 
@@ -180,7 +180,8 @@ export class AnthropicProvider implements ModelProvider {
     this.defaultMaxTokens = opts.maxTokens ?? 4096;
   }
 
-  async generate(req: GenerateRequest): Promise<AssistantTurn> {
+  /** Shared request body for both generate and stream — so they can't drift. */
+  private buildParams(req: GenerateRequest): Record<string, unknown> {
     const params: Record<string, unknown> = {
       model: this.model,
       max_tokens: req.maxTokens ?? this.defaultMaxTokens,
@@ -193,9 +194,25 @@ export class AnthropicProvider implements ModelProvider {
       const choice = toAnthropicToolChoice(req.toolChoice);
       if (choice) params.tool_choice = choice;
     }
+    return params;
+  }
 
+  async generate(req: GenerateRequest): Promise<AssistantTurn> {
     // Single cast at the SDK boundary; our structural types match the wire shape.
-    const resp = await this.client.messages.create(params as any, { signal: req.signal });
+    const resp = await this.client.messages.create(this.buildParams(req) as any, { signal: req.signal });
     return fromAnthropicResponse(resp as unknown as AnthResponse);
+  }
+
+  async *stream(req: GenerateRequest): AsyncIterable<StreamChunk> {
+    // The SDK's stream() runner reassembles the message (blocks/stop_reason/usage)
+    // into a final Message, so we reuse the same normalizer as generate() for `done`.
+    const stream = this.client.messages.stream(this.buildParams(req) as any, { signal: req.signal });
+    for await (const event of stream) {
+      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        yield { type: "text_delta", text: event.delta.text };
+      }
+    }
+    const message = await stream.finalMessage();
+    yield { type: "done", turn: fromAnthropicResponse(message as unknown as AnthResponse) };
   }
 }

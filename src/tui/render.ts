@@ -70,6 +70,9 @@ export function renderEvent(event: AgentEvent, source: Source = "main"): string[
       return [dim(indent, `  ⏹ cancelled`)];
     case "error":
       return [dim(indent, `(${event.message})`)];
+    // Streamed text arrives as sub-line deltas handled by the printer's volatile
+    // path (ADR-0002 §5), not as whole lines — renderEvent contributes nothing.
+    case "text_delta":
     // Structural / not shown in the transcript.
     case "turn_start":
     case "step_complete":
