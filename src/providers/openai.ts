@@ -21,7 +21,7 @@ import type {
   ToolSpec,
   ToolUseBlock,
 } from "../core/types";
-import type { GenerateRequest, ModelProvider } from "./provider";
+import type { GenerateRequest, ModelProvider, StreamChunk } from "./provider";
 
 // --- structural types for the OpenAI chat-completions wire shape ---
 
@@ -216,19 +216,39 @@ export class OpenAIProvider implements ModelProvider {
     this.model = opts.model ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
   }
 
-  async generate(req: GenerateRequest): Promise<AssistantTurn> {
-    const messages = toOpenAIMessages(req.messages, req.system);
+  /** Shared request body for both generate and stream — so they can't drift. */
+  private buildParams(req: GenerateRequest): Record<string, unknown> {
+    const params: Record<string, unknown> = {
+      model: this.model,
+      messages: toOpenAIMessages(req.messages, req.system),
+    };
     const tools = toOpenAITools(req.tools);
-
-    const params: Record<string, unknown> = { model: this.model, messages };
     if (tools) {
       params.tools = tools;
       params.tool_choice = toToolChoice(req.toolChoice) ?? "auto";
     }
     if (req.maxTokens) params.max_completion_tokens = req.maxTokens;
+    return params;
+  }
 
+  async generate(req: GenerateRequest): Promise<AssistantTurn> {
     // Single cast at the SDK boundary; our structural types match the wire shape.
-    const resp = await this.client.chat.completions.create(params as any, { signal: req.signal });
+    const resp = await this.client.chat.completions.create(this.buildParams(req) as any, { signal: req.signal });
     return fromOpenAIResponse(resp as unknown as OAIResponse);
+  }
+
+  async *stream(req: GenerateRequest): AsyncIterable<StreamChunk> {
+    // The SDK's stream() runner reassembles tool_calls into a final ChatCompletion,
+    // so we reuse the same normalizer as generate() for `done`. `include_usage`
+    // (streaming-only — invalid on a non-streaming create) makes token usage
+    // survive streaming, so the `done` turn matches generate().
+    const body = { ...this.buildParams(req), stream_options: { include_usage: true } };
+    const stream = this.client.chat.completions.stream(body as any, { signal: req.signal });
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content;
+      if (delta) yield { type: "text_delta", text: delta };
+    }
+    const completion = await stream.finalChatCompletion();
+    yield { type: "done", turn: fromOpenAIResponse(completion as unknown as OAIResponse) };
   }
 }

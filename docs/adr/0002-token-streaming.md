@@ -47,11 +47,15 @@ interface ModelProvider {
 }
 ```
 
-The adapter still owns normalization: it accumulates the SDK's stream and yields the final,
-fully-normalized `AssistantTurn` in the terminal `done` chunk. The engine never sees a
-vendor shape, and the assembled turn is byte-identical to what `generate()` would return —
-so message history, rollout, and tool extraction are unchanged. `signal` is forwarded into
-`stream` too (in-flight abort, per ADR-0001 §3).
+The adapter still owns normalization: it accumulates the SDK's stream (via the SDK's own
+`finalChatCompletion()` / `finalMessage()`, so tool-call reassembly stays the tested path)
+and yields the final, fully-normalized `AssistantTurn` in the terminal `done` chunk. The
+engine never sees a vendor shape, and the assembled turn carries the same content, tool
+calls, stop reason, and token usage as `generate()` would — so message history, rollout, and
+tool extraction are unchanged. (OpenAI/Azure omit usage on a stream unless the request sets
+`stream_options: { include_usage: true }`, so the stream path sets it; Anthropic's
+`finalMessage()` carries usage inherently.) `signal` is forwarded into `stream` too (in-flight
+abort, per ADR-0001 §3).
 
 ### 3. v1 streams text only; tool calls arrive whole in the `done` turn
 
