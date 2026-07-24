@@ -12,6 +12,7 @@ export * from "./skills/tools";
 export * from "./providers/provider";
 export * from "./providers/openai";
 export * from "./providers/anthropic";
+export * from "./providers/azure";
 export * from "./providers/factory";
 export * from "./permissions/gate";
 export * from "./tools/registry";

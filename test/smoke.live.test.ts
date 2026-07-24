@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import { OpenAIProvider } from "../src/providers/openai";
 import { AnthropicProvider } from "../src/providers/anthropic";
+import { AzureOpenAIProvider } from "../src/providers/azure";
 import { userText } from "../src/core/types";
 import type { ModelProvider } from "../src/providers/provider";
 
@@ -32,4 +33,9 @@ test.skipIf(!(OPT_IN && process.env.OPENAI_API_KEY))("live: OpenAI generate() re
 
 test.skipIf(!(OPT_IN && process.env.ANTHROPIC_API_KEY))("live: Anthropic generate() returns a normalized turn", async () => {
   await assertLiveTurn(new AnthropicProvider());
+});
+
+const azureReady = process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT && process.env.AZURE_OPENAI_DEPLOYMENT;
+test.skipIf(!(OPT_IN && azureReady))("live: Azure OpenAI generate() returns a normalized turn", async () => {
+  await assertLiveTurn(new AzureOpenAIProvider());
 });

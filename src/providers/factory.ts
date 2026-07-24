@@ -8,8 +8,9 @@
 import type { ModelProvider } from "./provider";
 import { OpenAIProvider } from "./openai";
 import { AnthropicProvider } from "./anthropic";
+import { AzureOpenAIProvider } from "./azure";
 
-export type ProviderName = "openai" | "anthropic";
+export type ProviderName = "openai" | "anthropic" | "azure";
 
 /** Resolve a provider from an explicit name, else `AGENT_PROVIDER`, else openai.
  * An empty/whitespace value is treated as unset (falls back to openai). */
@@ -20,7 +21,9 @@ export function createProvider(name?: string): ModelProvider {
       return new OpenAIProvider();
     case "anthropic":
       return new AnthropicProvider();
+    case "azure":
+      return new AzureOpenAIProvider();
     default:
-      throw new Error(`Unknown provider "${resolved}". Use "openai" or "anthropic" (set AGENT_PROVIDER).`);
+      throw new Error(`Unknown provider "${resolved}". Use "openai", "anthropic", or "azure" (set AGENT_PROVIDER).`);
   }
 }
