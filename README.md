@@ -64,8 +64,10 @@ bun test            # unit + integration tests; no network
 bun run typecheck   # tsc --noEmit (TypeScript 7)
 ```
 
-The live provider paths have opt-in smoke tests that run only when the matching
-API key is set.
+The live provider paths have opt-in smoke tests. They make real API calls, so
+they run only with an explicit opt-in — `RUN_LIVE_SMOKE=1 bun test` — and the
+matching key set. The default `bun test` is hermetic (no network) even when a
+`.env` with keys is present.
 
 ## Configuration
 
