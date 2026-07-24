@@ -1,21 +1,23 @@
 #!/usr/bin/env bun
 /**
- * Minimal CLI front-end — a thin client of the engine that renders the typed
- * event stream. Usage:
- *   bun run agent "what's in ./README.md?"
- *   echo "summarize package.json" | bun run agent
+ * Minimal CLI front-end — a thin client of the agent loop that renders the
+ * typed event stream. Usage:
+ *   bun run agent "list the src dir, then tell me what engine.ts does"
+ *   echo "summarize ./README.md" | bun run agent
  */
 
-import { runToolCall } from "../core/engine";
+import { runAgent } from "../core/engine";
 import { EventEmitter, type AgentEvent } from "../core/events";
 import { OpenAIProvider } from "../providers/openai";
 import { readFileTool } from "../tools/read-file";
+import { listDirTool } from "../tools/list-dir";
 import { ToolRegistry } from "../tools/registry";
 
 const SYSTEM = [
   "You are super-agent, a general-purpose assistant running in a terminal.",
-  "You can call tools. Use read_file to answer questions about local files.",
-  "When you have enough information, answer the user directly and concisely.",
+  "You can call tools: list_dir to explore directories and read_file to read files.",
+  "Break the task into steps, use tools to gather what you need,",
+  "and when you have enough information, answer the user directly and concisely.",
 ].join(" ");
 
 const DIM = "\x1b[2m";
@@ -44,7 +46,7 @@ function render(event: AgentEvent): void {
       process.stdout.write(`\n${BOLD}${event.text}${RESET}\n`);
       break;
     case "error":
-      process.stderr.write(`error: ${event.message}\n`);
+      process.stderr.write(`${DIM}(${event.message})${RESET}\n`);
       break;
   }
 }
@@ -71,11 +73,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const registry = new ToolRegistry().register(readFileTool);
+  const registry = new ToolRegistry().register(readFileTool).register(listDirTool);
   const events = new EventEmitter().on(render);
 
   try {
-    await runToolCall(prompt, { provider, registry, system: SYSTEM, events });
+    await runAgent(prompt, { provider, registry, system: SYSTEM, events });
   } catch (err) {
     process.stderr.write(`error: ${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(1);

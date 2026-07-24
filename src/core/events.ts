@@ -13,7 +13,7 @@ export type AgentEvent =
   | { type: "tool_call"; id: string; name: string; input: unknown }
   | { type: "tool_result"; toolUseId: string; name: string; content: string; isError: boolean }
   | { type: "step_complete"; step: number; stopReason: string }
-  | { type: "done"; text: string; turns: number }
+  | { type: "done"; text: string; steps: number }
   | { type: "error"; message: string };
 
 export type EventHandler = (event: AgentEvent) => void;

@@ -10,10 +10,13 @@ Codex CLI, OpenClaw, and Hermes are built) and
 
 ## Status
 
-**P1 — agent skeleton** ([issue #1](https://github.com/zq940222/super-agent/issues/1)): a provider
-abstraction (OpenAI), the message/turn model, a tool registry with `read_file`,
-and a single tool-call round-trip with a typed event stream. The generalized
-reasoning loop is **P2** (see the design doc for the roadmap).
+**P2 — reasoning loop** ([issue #3](https://github.com/zq940222/super-agent/issues/3)): a real
+ReAct loop (`while stop_reason == tool_use`, bounded by `maxSteps`) over a
+pluggable provider (OpenAI), the message/turn model, a tool registry with
+`read_file` + `list_dir`, and a typed event stream. Tool errors feed back and
+the loop continues. Built on **P1 — agent skeleton**
+([#1](https://github.com/zq940222/super-agent/issues/1)). See the design doc for
+the roadmap (P4 context, P5 permissions, P6 more backends, P7 MCP, P8 subagents).
 
 ## Setup
 
@@ -50,13 +53,14 @@ src/
 ├─ core/
 │  ├─ types.ts     Message / ContentBlock / AssistantTurn / ToolSpec (provider-neutral)
 │  ├─ events.ts    typed AgentEvent stream + emitter
-│  └─ engine.ts    the single tool-call round-trip driver
+│  └─ engine.ts    runAgent — the ReAct loop (while tool_use, maxSteps cap)
 ├─ providers/
 │  ├─ provider.ts  ModelProvider interface (the pluggable seam)
 │  └─ openai.ts    OpenAI adapter + pure wire-format normalizers
 ├─ tools/
 │  ├─ registry.ts  ToolRegistry + defineTool (Zod → JSON Schema + validator)
-│  └─ read-file.ts read_file (with built-in output truncation)
+│  ├─ read-file.ts read_file (with built-in output truncation)
+│  └─ list-dir.ts  list_dir (directory listing, capped)
 └─ cli/main.ts     minimal terminal front-end
 ```
 

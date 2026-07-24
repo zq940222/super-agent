@@ -6,3 +6,4 @@ export * from "./providers/provider";
 export * from "./providers/openai";
 export * from "./tools/registry";
 export * from "./tools/read-file";
+export * from "./tools/list-dir";
