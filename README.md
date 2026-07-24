@@ -10,12 +10,14 @@ Codex CLI, OpenClaw, and Hermes are built) and
 
 ## Status
 
-**P6 — pluggable multi-backend** ([issue #5](https://github.com/zq940222/super-agent/issues/5)):
-the same `runAgent` loop drives **OpenAI or Anthropic**, chosen by config
-(`AGENT_PROVIDER`), proving the provider abstraction. Built on the reasoning
-loop (**P2**, [#3](https://github.com/zq940222/super-agent/issues/3)) and the
-skeleton (**P1**, [#1](https://github.com/zq940222/super-agent/issues/1)).
-Roadmap remaining: P4 context, P5 permissions, P7 MCP, P8 subagents.
+**P5 — permissions & safety** ([issue #7](https://github.com/zq940222/super-agent/issues/7)):
+a harness-layer permission gate (deny → ask → allow, by mode + per-tool `risk`),
+human-in-the-loop approval for risky tools, a high-risk `write_file` tool, and a
+workspace path boundary for file tools. Prior: multi-backend (**P6**), reasoning
+loop (**P2**), skeleton (**P1**). Roadmap remaining: P4 context, P7 MCP, P8 subagents.
+
+Permissions are enforced by the engine, **not** the prompt — the model can ask
+to run a tool, but only the policy decides whether it does.
 
 ## Setup
 
@@ -34,6 +36,11 @@ echo "summarize ./README.md" | bun run agent
 # switch backend by config — same loop, different model:
 AGENT_PROVIDER=anthropic bun run agent "list src/ then explain engine.ts"
 ```
+
+Writing a file is high-risk, so under the default policy the agent asks before
+`write_file` runs. Change the posture with `AGENT_PERMISSION_MODE`:
+`default` (ask), `auto` (allow everything — trusted/sandboxed only), or
+`readonly` (deny writes).
 
 You'll see the agent decide to call `read_file`, the (truncated) result, and its
 final answer — the whole run rendered from the event stream.
@@ -61,10 +68,14 @@ src/
 │  ├─ openai.ts    OpenAI adapter + pure wire-format normalizers
 │  ├─ anthropic.ts Anthropic adapter + pure wire-format normalizers
 │  └─ factory.ts   createProvider(name) — picks a backend by config
+├─ permissions/
+│  └─ gate.ts      PermissionPolicy — deny→ask→allow by mode + risk
 ├─ tools/
 │  ├─ registry.ts  ToolRegistry + defineTool (Zod → JSON Schema + validator)
+│  ├─ workspace.ts resolveInWorkspace — file-tool path boundary
 │  ├─ read-file.ts read_file (with built-in output truncation)
-│  └─ list-dir.ts  list_dir (directory listing, capped)
+│  ├─ list-dir.ts  list_dir (directory listing, capped)
+│  └─ write-file.ts write_file (high-risk; gated by the permission policy)
 └─ cli/main.ts     minimal terminal front-end
 ```
 

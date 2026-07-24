@@ -10,13 +10,16 @@ import { runAgent } from "../core/engine";
 import { EventEmitter, type AgentEvent } from "../core/events";
 import { createProvider } from "../providers/factory";
 import type { ModelProvider } from "../providers/provider";
+import { PermissionPolicy, type PermissionMode, type PermissionRequest } from "../permissions/gate";
 import { readFileTool } from "../tools/read-file";
 import { listDirTool } from "../tools/list-dir";
+import { writeFileTool } from "../tools/write-file";
 import { ToolRegistry } from "../tools/registry";
 
 const SYSTEM = [
   "You are super-agent, a general-purpose assistant running in a terminal.",
-  "You can call tools: list_dir to explore directories and read_file to read files.",
+  "You can call tools: list_dir to explore directories, read_file to read files,",
+  "and write_file to create or overwrite files.",
   "Break the task into steps, use tools to gather what you need,",
   "and when you have enough information, answer the user directly and concisely.",
 ].join(" ");
@@ -43,6 +46,9 @@ function render(event: AgentEvent): void {
       process.stdout.write(`${DIM}  ${mark} ${preview(event.content)}${RESET}\n`);
       break;
     }
+    case "permission_decision":
+      process.stdout.write(`${DIM}  🔐 ${event.name} → ${event.decision}${RESET}\n`);
+      break;
     case "done":
       process.stdout.write(`\n${BOLD}${event.text}${RESET}\n`);
       break;
@@ -73,17 +79,37 @@ async function main(): Promise<void> {
     process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(1);
   }
-  process.stdout.write(`${DIM}(backend: ${provider.name})${RESET}\n`);
+  const mode = (process.env.AGENT_PERMISSION_MODE as PermissionMode) || "default";
+  process.stdout.write(`${DIM}(backend: ${provider.name} · permissions: ${mode})${RESET}\n`);
 
-  const registry = new ToolRegistry().register(readFileTool).register(listDirTool);
+  const registry = new ToolRegistry()
+    .register(readFileTool)
+    .register(listDirTool)
+    .register(writeFileTool);
+  const policy = new PermissionPolicy({ mode });
   const events = new EventEmitter().on(render);
 
   try {
-    await runAgent(prompt, { provider, registry, system: SYSTEM, events });
+    await runAgent(prompt, {
+      provider,
+      registry,
+      system: SYSTEM,
+      policy,
+      approve,
+      workspaceRoot: process.cwd(),
+      events,
+    });
   } catch (err) {
     process.stderr.write(`error: ${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(1);
   }
+}
+
+/** HITL approver: prompt on the terminal. Non-interactive (piped) ⇒ deny. */
+async function approve(req: PermissionRequest): Promise<boolean> {
+  if (!process.stdin.isTTY) return false;
+  const answer = prompt(`${BOLD}🔐 Allow ${req.name}(${preview(JSON.stringify(req.input), 60)})? [y/N]${RESET}`);
+  return (answer ?? "").trim().toLowerCase().startsWith("y");
 }
 
 main();

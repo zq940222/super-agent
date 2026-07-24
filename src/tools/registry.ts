@@ -18,6 +18,8 @@ export type Risk = "low" | "medium" | "high";
 export interface ToolContext {
   /** Working directory tools resolve relative paths against. */
   cwd: string;
+  /** If set, file tools reject paths that escape this root (see workspace.ts). */
+  workspaceRoot?: string;
 }
 
 export type ToolHandler = (input: any, ctx: ToolContext) => Promise<string> | string;
