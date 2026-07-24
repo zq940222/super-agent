@@ -57,7 +57,9 @@ bun test            # 单元 + 集成测试；不联网
 bun run typecheck   # tsc --noEmit（TypeScript 7）
 ```
 
-真实调用后端的路径有可选的冒烟测试，只在对应 API key 存在时才运行。
+真实调用后端的路径有可选的冒烟测试。它们会发真实 API 请求，所以需要**显式开启**——
+`RUN_LIVE_SMOKE=1 bun test`，并设好对应的 key。默认的 `bun test` 是隔离的（不联网），
+即使 `.env` 里填了 key 也不会触发网络请求。
 
 ## 配置
 
