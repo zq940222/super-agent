@@ -1,0 +1,330 @@
+<title>四款主流 Agent 架构 · 田野指南</title>
+<style>
+  :root {
+    /* neutrals — cool, blue-biased (chosen, not defaulted) */
+    --paper: #eef1f6;
+    --card: #f9fafc;
+    --ink: #161a23;
+    --ink-soft: #444b5c;
+    --ink-faint: #737b8d;
+    --line: #d5dae4;
+    --line-strong: #b9c0ce;
+    /* structural accent — blueprint indigo */
+    --accent: #33489a;
+    --accent-soft: #e5e9f7;
+    /* categorical agent hues */
+    --cc: #cf5a3c;   /* Claude Code — clay */
+    --cx: #12897a;   /* Codex CLI — teal */
+    --oc: #6a5ce0;   /* OpenClaw — violet */
+    --hm: #b8791a;   /* Hermes — amber */
+    --good: #2f8f5b;
+    --shadow: 0 1px 2px rgba(20,26,35,.06), 0 8px 24px rgba(20,26,35,.06);
+    --mono: "Cascadia Code", "SF Mono", ui-monospace, "Consolas", "Roboto Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0e1119;
+      --card: #161b26;
+      --ink: #e7ebf2;
+      --ink-soft: #aab2c2;
+      --ink-faint: #79839a;
+      --line: #262e3d;
+      --line-strong: #354055;
+      --accent: #8b9cf0;
+      --accent-soft: #1b2338;
+      --cc: #e8785a;
+      --cx: #33b6a4;
+      --oc: #9587f5;
+      --hm: #d7a343;
+      --good: #4bbd7f;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #eef1f6; --card: #f9fafc; --ink: #161a23; --ink-soft: #444b5c;
+    --ink-faint: #737b8d; --line: #d5dae4; --line-strong: #b9c0ce;
+    --accent: #33489a; --accent-soft: #e5e9f7;
+    --cc: #cf5a3c; --cx: #12897a; --oc: #6a5ce0; --hm: #b8791a; --good: #2f8f5b;
+    --shadow: 0 1px 2px rgba(20,26,35,.06), 0 8px 24px rgba(20,26,35,.06);
+  }
+  :root[data-theme="dark"] {
+    --paper: #0e1119; --card: #161b26; --ink: #e7ebf2; --ink-soft: #aab2c2;
+    --ink-faint: #79839a; --line: #262e3d; --line-strong: #354055;
+    --accent: #8b9cf0; --accent-soft: #1b2338;
+    --cc: #e8785a; --cx: #33b6a4; --oc: #9587f5; --hm: #d7a343; --good: #4bbd7f;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: clamp(20px, 4vw, 56px) clamp(16px, 4vw, 40px) 80px; }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 14px;
+  }
+  h1 { font-size: clamp(30px, 5.2vw, 52px); line-height: 1.05; margin: 0 0 16px; font-weight: 700; letter-spacing: -.01em; text-wrap: balance; }
+  h1 .thin { color: var(--ink-faint); font-weight: 400; }
+  .lede { font-size: clamp(16px, 2vw, 19px); color: var(--ink-soft); max-width: 62ch; margin: 0; }
+
+  section { margin-top: clamp(48px, 7vw, 84px); }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 26px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+  .sec-head .num { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 600; }
+  .sec-head h2 { font-size: clamp(20px, 3vw, 27px); margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  .sec-head .note { margin-left: auto; font-size: 13px; color: var(--ink-faint); font-family: var(--mono); }
+
+  /* ---- shared-loop hero diagram ---- */
+  .loop-band {
+    margin-top: 40px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 32px; align-items: center;
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: clamp(20px, 3vw, 34px); box-shadow: var(--shadow);
+  }
+  .loop-copy h3 { margin: 0 0 10px; font-size: 18px; }
+  .loop-copy p { margin: 0 0 14px; color: var(--ink-soft); font-size: 15px; }
+  .loop-copy code { font-family: var(--mono); background: var(--accent-soft); color: var(--accent); padding: 1px 6px; border-radius: 5px; font-size: 13px; }
+  .loop-svg { width: 100%; height: auto; }
+  .loop-svg text { font-family: var(--mono); fill: var(--ink); }
+  .loop-node { fill: var(--card); stroke: var(--line-strong); stroke-width: 1.5; }
+  .loop-path { fill: none; stroke: var(--line-strong); stroke-width: 2; }
+  .loop-pulse { fill: none; stroke: var(--accent); stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: 26 620; }
+  @media (prefers-reduced-motion: no-preference) {
+    .loop-pulse { animation: travel 4.2s linear infinite; }
+  }
+  @keyframes travel { to { stroke-dashoffset: -646; } }
+
+  /* ---- agent spec cards ---- */
+  .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px 22px 20px; box-shadow: var(--shadow); position: relative; overflow: hidden;
+  }
+  .card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--hue); }
+  .card .tag { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--hue); font-weight: 600; }
+  .card h3 { margin: 6px 0 2px; font-size: 21px; letter-spacing: -.01em; }
+  .card .role { color: var(--ink-soft); font-size: 14px; margin: 0 0 16px; }
+  .card dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; font-size: 13.5px; }
+  .card dt { color: var(--ink-faint); font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; padding-top: 2px; }
+  .card dd { margin: 0; color: var(--ink); }
+  .card .sharp { margin-top: 15px; padding-top: 14px; border-top: 1px dashed var(--line-strong); font-size: 13.5px; color: var(--ink-soft); }
+  .card .sharp b { color: var(--hue); font-weight: 600; }
+
+  /* ---- subsystem matrix ---- */
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; background: var(--card); font-size: 13.5px; }
+  thead th { position: sticky; top: 0; background: var(--card); text-align: left; padding: 15px 16px; border-bottom: 2px solid var(--line-strong); font-size: 12px; letter-spacing: .05em; }
+  thead th.a { color: var(--hue); }
+  tbody th { text-align: left; padding: 13px 16px; font-family: var(--mono); font-size: 11.5px; letter-spacing: .03em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; white-space: nowrap; vertical-align: top; border-bottom: 1px solid var(--line); }
+  tbody td { padding: 13px 16px; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); color: var(--ink-soft); vertical-align: top; }
+  tbody tr:last-child th, tbody tr:last-child td { border-bottom: none; }
+  tbody td b { color: var(--ink); font-weight: 600; }
+
+  /* ---- principles ---- */
+  .principles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; counter-reset: p; }
+  .p {
+    display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: start;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .p .rank { font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--paper); background: var(--accent); width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; }
+  .p h4 { margin: 0 0 3px; font-size: 15px; }
+  .p p { margin: 0; font-size: 13px; color: var(--ink-soft); }
+
+  .files { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }
+  .file { font-family: var(--mono); font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 9px; padding: 10px 15px; color: var(--ink); box-shadow: var(--shadow); }
+  .file span { color: var(--accent); }
+  footer { margin-top: 70px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 12.5px; font-family: var(--mono); }
+
+  @media (max-width: 720px) {
+    .loop-band { grid-template-columns: 1fr; }
+    .cards, .principles { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Field Guide · 架构调研总览</p>
+    <h1>四款主流 Agent 的<br><span class="thin">同一个内核，四种取舍</span></h1>
+    <p class="lede">Claude Code、OpenAI Codex CLI、OpenClaw、Hermes ——
+      它们的差别不在"是不是 agent"，而在围绕同一个循环各自做了哪些工程取舍。这份指南把取舍摊开对照，作为自研 agent 的设计依据。</p>
+  </header>
+
+  <div class="loop-band">
+    <div class="loop-copy">
+      <h3>所有 agent 共享的内核</h3>
+      <p>一个围绕单次模型对话的 <code>while</code> 循环，源自 2022 年的 ReAct。模型自己决定下一步——这正是 agent 区别于 workflow 的地方。</p>
+      <p>循环只在模型返回 <code>end_turn</code>（无工具调用）时终止，并由 <code>maxSteps</code> 兜底。填爆上下文的从来是工具输出，不是用户输入。</p>
+    </div>
+    <svg class="loop-svg" viewBox="0 0 340 220" role="img" aria-label="Agent 循环示意图">
+      <path class="loop-path" d="M170 30 a90 75 0 1 1 -0.1 0" />
+      <path class="loop-pulse" d="M170 30 a90 75 0 1 1 -0.1 0" />
+      <g text-anchor="middle" font-size="12">
+        <rect class="loop-node" x="120" y="14" width="100" height="30" rx="8"/>
+        <text x="170" y="33">收集上下文</text>
+        <rect class="loop-node" x="248" y="95" width="82" height="30" rx="8"/>
+        <text x="289" y="114">调模型</text>
+        <rect class="loop-node" x="120" y="176" width="100" height="30" rx="8"/>
+        <text x="170" y="195">执行工具</text>
+        <rect class="loop-node" x="10" y="95" width="82" height="30" rx="8"/>
+        <text x="51" y="108">结果</text>
+        <text x="51" y="120">回填</text>
+      </g>
+    </svg>
+  </div>
+
+  <section>
+    <div class="sec-head"><span class="num">01</span><h2>四款产品的定位与取舍</h2></div>
+    <div class="cards">
+      <article class="card" style="--hue:var(--cc)">
+        <span class="tag">Claude Code · Anthropic</span>
+        <h3>Claude Code</h3>
+        <p class="role">终端编码 agent（= Agent SDK loop + TUI）</p>
+        <dl>
+          <dt>语言</dt><dd>TypeScript / Node</dd>
+          <dt>循环</dt><dd><code>while stop_reason==tool_use</code> 单线程</dd>
+          <dt>后端</dt><dd>主 Claude，SDK 可扩展</dd>
+        </dl>
+        <p class="sharp"><b>最锋利处：</b>「prompt caching 是一切」——请求按稳定前缀分层；hooks/permissions 在 harness 层强制，而非靠 prompt。</p>
+      </article>
+
+      <article class="card" style="--hue:var(--cx)">
+        <span class="tag">Codex CLI · OpenAI</span>
+        <h3>Codex CLI</h3>
+        <p class="role">终端编码 agent（Rust 核心 + TS 启动器）</p>
+        <dl>
+          <dt>语言</dt><dd>Rust · 单二进制</dd>
+          <dt>循环</dt><dd>Session → Task → Turn（SQ/EQ 队列）</dd>
+          <dt>后端</dt><dd>仅 Responses API，previous_response_id 传状态</dd>
+        </dl>
+        <p class="sharp"><b>最锋利处：</b>OS 内核级 sandbox（Seatbelt / bwrap+seccomp / Win 受限令牌），sandbox 与 approval 两层正交，fail-closed。</p>
+      </article>
+
+      <article class="card" style="--hue:var(--oc)">
+        <span class="tag">OpenClaw · 开源</span>
+        <h3>OpenClaw</h3>
+        <p class="role">本地优先的个人通用助理</p>
+        <dl>
+          <dt>语言</dt><dd>TypeScript / Node（pnpm）</dd>
+          <dt>循环</dt><dd>Gateway 控制面 + 嵌入式 runtime</dd>
+          <dt>后端</dt><dd>可插拔 provider/model 字符串</dd>
+        </dl>
+        <p class="sharp"><b>最锋利处：</b>Gateway 单一类型化控制面（TypeBox 校验帧）；三层安全 sandbox / tool-policy / elevated；连 20+ 消息渠道。</p>
+      </article>
+
+      <article class="card" style="--hue:var(--hm)">
+        <span class="tag">Hermes · Nous Research</span>
+        <h3>Hermes Agent</h3>
+        <p class="role">自托管通用 agent 运行时</p>
+        <dl>
+          <dt>语言</dt><dd>Python</dd>
+          <dt>循环</dt><dd>run_conversation() 同步 + 预算追踪</dd>
+          <dt>后端</dt><dd>18+ provider · 三种 wire-format</dd>
+        </dl>
+        <p class="sharp"><b>最锋利处：</b>(provider,model) resolver + chat/responses/anthropic 三线格式——同一 loop 驱动三家。插件化 provider 与 memory。</p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="num">02</span><h2>子系统横向对照</h2><span class="note">深色 = 该项的差异化亮点</span></div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">子系统</th>
+            <th scope="col" class="a" style="--hue:var(--cc)">Claude Code</th>
+            <th scope="col" class="a" style="--hue:var(--cx)">Codex CLI</th>
+            <th scope="col" class="a" style="--hue:var(--oc)">OpenClaw</th>
+            <th scope="col" class="a" style="--hue:var(--hm)">Hermes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">模型协议</th>
+            <td><b>Messages + prompt caching</b></td>
+            <td>仅 Responses API，服务端存状态</td>
+            <td>provider/model 字符串</td>
+            <td><b>3 种 wire-format 模式</b></td>
+          </tr>
+          <tr>
+            <th scope="row">工具系统</th>
+            <td>Read/Edit/Write/Bash/Glob/Grep/Agent</td>
+            <td><b>apply_patch（Lark 语法约束）</b>/shell/plan</td>
+            <td>exec/browser/message… + meta-search</td>
+            <td>terminal/patch/<b>execute_code(RPC)</b></td>
+          </tr>
+          <tr>
+            <th scope="row">上下文 / 记忆</th>
+            <td><b>CLAUDE.md + 自动 compaction</b></td>
+            <td>AGENTS.md 链（32KiB）+ rollout</td>
+            <td><b>Bootstrap MD + 向量+BM25 混合检索</b></td>
+            <td>分层 prompt + SQLite FTS5</td>
+          </tr>
+          <tr>
+            <th scope="row">权限 / 安全</th>
+            <td><b>deny→ask→allow + hooks</b></td>
+            <td><b>OS 内核 sandbox + approval 两层</b></td>
+            <td><b>三层：sandbox/tool-policy/elevated</b></td>
+            <td>6 种执行后端隔离</td>
+          </tr>
+          <tr>
+            <th scope="row">扩展生态</th>
+            <td>MCP（默认延迟加载）</td>
+            <td>MCP client + server</td>
+            <td>MCP + 插件 + skills + ClawHub</td>
+            <td>MCP + 插件 + skills</td>
+          </tr>
+          <tr>
+            <th scope="row">会话持久化</th>
+            <td>会话文件 + /rewind + /compact</td>
+            <td><b>append-only rollout JSONL + 压缩</b></td>
+            <td><b>SQLite 事件日志（可分支）</b></td>
+            <td>SQLite FTS5 + lineage</td>
+          </tr>
+          <tr>
+            <th scope="row">子代理</th>
+            <td>Agent 工具 + Workflow 编排</td>
+            <td>multi_agents 工具</td>
+            <td>按渠道隔离的多 agent</td>
+            <td>delegate_task（深度/并发上限）</td>
+          </tr>
+          <tr>
+            <th scope="row">UI 解耦</th>
+            <td>Agent SDK 事件迭代器</td>
+            <td><b>SQ/EQ 队列对，引擎 UI 无关</b></td>
+            <td><b>异步 run 句柄 + 三条事件流</b></td>
+            <td>统一 AIAgent 服务所有入口</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="num">03</span><h2>给自研 agent 的启示（按优先级）</h2><span class="note">序号 = 落地优先级</span></div>
+    <div class="principles">
+      <div class="p"><span class="rank">1</span><div><h4>loop 笨且单线程</h4><p><code>stop_reason</code> 终止 + <code>maxSteps</code> 兜底，别过度设计编排。</p></div></div>
+      <div class="p"><span class="rank">2</span><div><h4>为前缀缓存分层请求</h4><p>system+tools 在前、项目上下文居中、易变对话在后。只 append，不改前缀。</p></div></div>
+      <div class="p"><span class="rank">3</span><div><h4>工具内置结果截断</h4><p>分页 / 截断打标记 / 大输出溢出到文件。填爆上下文的是工具输出。</p></div></div>
+      <div class="p"><span class="rank">4</span><div><h4>少而锋利的工具 + 代码执行</h4><p>臃肿重叠制造模糊决策点；grep/glob/bash 廉价覆盖巨大面。</p></div></div>
+      <div class="p"><span class="rank">5</span><div><h4>权限在 harness 层强制</h4><p>deny→ask→allow，只读零摩擦。安全规则写进代码，不写进 prompt。</p></div></div>
+      <div class="p"><span class="rank">6</span><div><h4>provider 归一化两处差异</h4><p>stop_reason 命名 + tool_result 回填方式，藏进 adapter，loop 只见中立类型。</p></div></div>
+      <div class="p"><span class="rank">7</span><div><h4>把工具输出当不可信</h4><p>回填前中和指令形状内容；打破「私有数据 + 不可信内容 + 对外通信」致命三要素。</p></div></div>
+      <div class="p"><span class="rank">8</span><div><h4>UI-agnostic 引擎 + 事件流</h4><p>Op/Event 序列化流解耦前端；run 立即返回句柄。</p></div></div>
+    </div>
+  </section>
+
+  <div class="files">
+    <div class="file"><span>docs/</span>agent-research.md — 完整调研与原理分析</div>
+    <div class="file"><span>docs/</span>our-agent-design.md — 自研架构 + 分阶段计划</div>
+  </div>
+
+  <footer>
+    调研时间 2026-07 · 一手来源：Anthropic / OpenAI 官方文档与源码、MCP 规范、ReAct 论文、Lilian Weng。
+    OpenClaw / Hermes 架构模式取自各自 GitHub 与官方文档；具体版本号与时间线含二手资料，仅供参考。
+  </footer>
+
+</div>
