@@ -1,41 +1,48 @@
 # super-agent
 
-A general-purpose task agent built **from scratch** in TypeScript to learn agent
-architecture hands-on — pluggable model backends, a normalized message model, a
-tool registry, and a typed event stream. Runs on [Bun](https://bun.sh).
+**English** · [简体中文](README.zh-CN.md)
 
-Background: [`docs/agent-research.md`](docs/agent-research.md) (how Claude Code,
-Codex CLI, OpenClaw, and Hermes are built) and
-[`docs/our-agent-design.md`](docs/our-agent-design.md) (our design + 8-phase plan).
+A general-purpose task agent built **from scratch** in TypeScript, to learn agent
+architecture hands-on. It has a normalized message model, pluggable model
+backends (OpenAI + Anthropic), a tool registry, a permission gate, context
+compaction, session persistence, an MCP client, and subagents — assembled over
+eight small, tested phases. Runs on [Bun](https://bun.sh).
 
-## Status
+New here? Start with the **[reader's guide](docs/GUIDE.md)**. The thinking behind
+the design is in [`docs/agent-research.md`](docs/agent-research.md) (how Claude
+Code, Codex CLI, OpenClaw, and Hermes are built) and
+[`docs/our-agent-design.md`](docs/our-agent-design.md) (our design + the 8-phase plan).
 
-**Feature-complete** through the 8-phase build. Latest — **P8 — subagents**
-([issue #13](https://github.com/zq940222/super-agent/issues/13)): a `spawn_agent`
-tool delegates a self-contained subtask to a fresh child `runAgent` (isolated
-context — only the task goes in, only the final answer comes back), with a
-recursion cap; parallel delegation falls out of the engine's parallel tool calls.
+## Highlights
 
-The phases: skeleton (**P1**) · reasoning loop (**P2**) · context management /
-compaction + session rollout (**P4**) · permissions & safety (**P5**) ·
-pluggable OpenAI + Anthropic backends (**P6**) · MCP client (**P7**) · subagents
-(**P8**). See `docs/agent-research.md` for the architecture study behind them.
-
-Permissions are enforced by the engine, **not** the prompt — the model can ask
-to run a tool, but only the policy decides whether it does.
+- **One dumb loop, many backends.** A single `runAgent` ReAct loop
+  (`while stop_reason == tool_use`, capped by `maxSteps`) drives OpenAI or
+  Anthropic — chosen by config. Each adapter hides its wire-format differences.
+- **Permissions in the harness, not the prompt.** A policy (`deny → ask → allow`,
+  by mode + per-tool risk) decides what runs; risky tools trigger human-in-the-loop
+  approval. The model can *ask*; only the policy *allows*.
+- **Context that survives long tasks.** Compaction summarizes old turns past a
+  token budget (with an orphan-safe cut that never splits a `tool_use` from its
+  `tool_result`); sessions persist as append-only JSONL.
+- **An open tool ecosystem.** A hand-rolled MCP (Model Context Protocol) stdio
+  client registers external servers' tools through the *same* registry and
+  permission gate as native tools.
+- **Delegation.** A `spawn_agent` tool runs subtasks in isolated child contexts
+  and returns only a distilled result; parallel delegation is free.
+- **Tested.** 75 passing tests against fake providers and a mock MCP server — no
+  network needed. Type-checked with TypeScript 7.
 
 ## Setup
 
 ```bash
 bun install
-cp .env.example .env   # then put your OPENAI_API_KEY in .env
+cp .env.example .env   # then set OPENAI_API_KEY (and/or ANTHROPIC_API_KEY)
 ```
 
 ## Run
 
 ```bash
 bun run agent "what's in ./package.json?"
-# or pipe a prompt:
 echo "summarize ./README.md" | bun run agent
 
 # switch backend by config — same loop, different model:
@@ -43,61 +50,88 @@ AGENT_PROVIDER=anthropic bun run agent "list src/ then explain engine.ts"
 ```
 
 Writing a file is high-risk, so under the default policy the agent asks before
-`write_file` runs. Change the posture with `AGENT_PERMISSION_MODE`:
-`default` (ask), `auto` (allow everything — trusted/sandboxed only), or
-`readonly` (deny writes).
-
-To give the agent external tools, drop an `mcp.json` in the cwd (see
-`mcp.json.example`). Each server's tools appear as `mcp__<server>__<tool>` and
-are gated like any other tool.
-
-You'll see the agent decide to call `read_file`, the (truncated) result, and its
-final answer — the whole run rendered from the event stream.
+`write_file` runs. To give it external tools, drop an `mcp.json` in the cwd (see
+[`mcp.json.example`](mcp.json.example)); each server's tools appear as
+`mcp__<server>__<tool>` and are gated like any other tool.
 
 ## Develop
 
 ```bash
-bun test            # unit tests (fake-provider seam + pure normalizers); no network
-bun run typecheck   # tsc --noEmit
+bun test            # unit + integration tests; no network
+bun run typecheck   # tsc --noEmit (TypeScript 7)
 ```
 
-The live OpenAI path has one opt-in smoke test that runs only when
-`OPENAI_API_KEY` is set (`test/smoke.live.test.ts`).
+The live provider paths have opt-in smoke tests that run only when the matching
+API key is set.
 
-## Architecture (P1)
+## Configuration
+
+Environment variables (see [`.env.example`](.env.example)):
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `AGENT_PROVIDER` | Backend: `openai` or `anthropic` | `openai` |
+| `AGENT_PERMISSION_MODE` | `default` (ask), `auto` (allow all), `readonly` (deny writes) | `default` |
+| `AGENT_MAX_CONTEXT_TOKENS` | Compact once the estimate exceeds this | built-in (dormant) |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | OpenAI backend | model `gpt-4o-mini` |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` / `ANTHROPIC_BASE_URL` | Anthropic backend | model `claude-sonnet-5` |
+
+Secrets are read only from the environment (or `.env`) — never hard-code them.
+
+## Architecture
 
 ```
 src/
 ├─ core/
-│  ├─ types.ts      Message / ContentBlock / AssistantTurn / ToolSpec (provider-neutral)
-│  ├─ events.ts     typed AgentEvent stream + emitter
-│  ├─ engine.ts     runAgent — the ReAct loop (while tool_use, maxSteps cap)
-│  └─ compaction.ts estimateTokens + compact (orphan-safe summarization)
+│  ├─ types.ts       Message / ContentBlock / AssistantTurn / ToolSpec (provider-neutral)
+│  ├─ events.ts      typed AgentEvent stream + emitter
+│  ├─ engine.ts      runAgent — the ReAct loop + permission gate + compaction
+│  └─ compaction.ts  estimateTokens + compact (orphan-safe summarization)
 ├─ providers/
-│  ├─ provider.ts  ModelProvider interface (the pluggable seam)
-│  ├─ openai.ts    OpenAI adapter + pure wire-format normalizers
-│  ├─ anthropic.ts Anthropic adapter + pure wire-format normalizers
-│  └─ factory.ts   createProvider(name) — picks a backend by config
+│  ├─ provider.ts    ModelProvider interface (the pluggable seam)
+│  ├─ openai.ts      OpenAI adapter + pure wire-format normalizers
+│  ├─ anthropic.ts   Anthropic adapter + pure wire-format normalizers
+│  └─ factory.ts     createProvider(name) — picks a backend by config
 ├─ permissions/
-│  └─ gate.ts      PermissionPolicy — deny→ask→allow by mode + risk
+│  └─ gate.ts        PermissionPolicy — deny→ask→allow by mode + risk
 ├─ tools/
-│  ├─ registry.ts  ToolRegistry + defineTool (Zod → JSON Schema + validator)
-│  ├─ workspace.ts resolveInWorkspace — file-tool path boundary
-│  ├─ read-file.ts read_file (with built-in output truncation)
-│  ├─ list-dir.ts  list_dir (directory listing, capped)
-│  └─ write-file.ts write_file (high-risk; gated by the permission policy)
+│  ├─ registry.ts    ToolRegistry + defineTool (Zod → JSON Schema + validator)
+│  ├─ workspace.ts   resolveInWorkspace — file-tool path boundary
+│  ├─ read-file.ts   read_file (output truncation)
+│  ├─ list-dir.ts    list_dir (capped listing)
+│  └─ write-file.ts  write_file (high-risk; gated)
 ├─ session/
-│  └─ rollout.ts   append-only JSONL session persistence
+│  └─ rollout.ts     append-only JSONL session persistence
 ├─ mcp/
-│  ├─ client.ts    minimal MCP stdio JSON-RPC client (initialize/list/call)
-│  └─ register.ts  connectMcpServer — register MCP tools into the registry
+│  ├─ client.ts      minimal MCP stdio JSON-RPC client (initialize/list/call)
+│  └─ register.ts    connectMcpServer — register MCP tools into the registry
 ├─ agents/
-│  └─ subagent.ts  createSubagentTool — spawn_agent (isolated child runAgent)
-└─ cli/main.ts     minimal terminal front-end
+│  └─ subagent.ts    createSubagentTool — spawn_agent (isolated child runAgent)
+└─ cli/main.ts       minimal terminal front-end
 ```
 
-**Design seams worth knowing:** the engine depends only on `ModelProvider`, so
-tests drive it with a scripted fake provider — no network. Each tool's
-model-facing JSON Schema and runtime validator are derived from one Zod schema,
-so they can't drift. Tool output is size-capped so it can't blow out the context
-window.
+Built-in tools: `read_file`, `list_dir`, `write_file`, `spawn_agent`, plus any
+MCP tools you configure.
+
+## The 8 phases
+
+Each phase is one merged PR and turns a researched principle into tested code:
+
+| Phase | What | Principle |
+|---|---|---|
+| P1 | skeleton: provider abstraction, message model, single tool round-trip | wire protocol, tool_use/tool_result |
+| P2 | the ReAct loop (`while tool_use` + `maxSteps`) | the loop *is* the agent |
+| P4 | context management: compaction + session rollout | context rot, external memory |
+| P5 | permissions & safety: gate + HITL + workspace boundary | two-layer enforcement, lethal trifecta |
+| P6 | pluggable multi-backend: Anthropic adapter + factory | provider normalization |
+| P7 | MCP client | one gate for every tool source |
+| P8 | subagents: `spawn_agent` | context isolation, orchestrator-worker |
+
+## Status & limits
+
+Feature-complete through P8. Deliberately deferred (see the design doc): a local
+(Ollama/LM Studio) backend, streaming, a `bash` tool, content-level
+prompt-injection scanning, MCP HTTP transport, and resuming a saved session into
+the live loop.
+
+Built to learn — not a supported product.
