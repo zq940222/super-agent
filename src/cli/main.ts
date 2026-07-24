@@ -11,6 +11,8 @@ import { EventEmitter, type AgentEvent } from "../core/events";
 import { createProvider } from "../providers/factory";
 import type { ModelProvider } from "../providers/provider";
 import { PermissionPolicy, type PermissionMode, type PermissionRequest } from "../permissions/gate";
+import { connectMcpServer } from "../mcp/register";
+import type { McpClient } from "../mcp/client";
 import { createRollout } from "../session/rollout";
 import { readFileTool } from "../tools/read-file";
 import { listDirTool } from "../tools/list-dir";
@@ -90,6 +92,7 @@ async function main(): Promise<void> {
     .register(readFileTool)
     .register(listDirTool)
     .register(writeFileTool);
+  const mcpClients = await loadMcpServers(registry);
   const policy = new PermissionPolicy({ mode });
   const events = new EventEmitter().on(render);
 
@@ -112,8 +115,34 @@ async function main(): Promise<void> {
     process.stdout.write(`${DIM}(session: ${sessionPath})${RESET}\n`);
   } catch (err) {
     process.stderr.write(`error: ${err instanceof Error ? err.message : String(err)}\n`);
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    await Promise.all(mcpClients.map((c) => c.close()));
   }
+}
+
+/** Connect any MCP servers declared in ./mcp.json and register their tools. */
+async function loadMcpServers(registry: ToolRegistry): Promise<McpClient[]> {
+  const file = Bun.file("mcp.json");
+  if (!(await file.exists())) return [];
+  const clients: McpClient[] = [];
+  try {
+    const config = (await file.json()) as {
+      servers?: Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
+    };
+    for (const [name, cfg] of Object.entries(config.servers ?? {})) {
+      try {
+        const { client, toolNames } = await connectMcpServer(registry, { name, ...cfg });
+        clients.push(client);
+        process.stdout.write(`${DIM}(mcp: ${name} → ${toolNames.length} tool(s))${RESET}\n`);
+      } catch (err) {
+        process.stderr.write(`${DIM}(mcp: failed to connect "${name}": ${err instanceof Error ? err.message : String(err)})${RESET}\n`);
+      }
+    }
+  } catch (err) {
+    process.stderr.write(`${DIM}(mcp: could not read mcp.json: ${err instanceof Error ? err.message : String(err)})${RESET}\n`);
+  }
+  return clients;
 }
 
 /** HITL approver: prompt on the terminal. Non-interactive (piped) ⇒ deny. */
