@@ -10,13 +10,12 @@ Codex CLI, OpenClaw, and Hermes are built) and
 
 ## Status
 
-**P2 — reasoning loop** ([issue #3](https://github.com/zq940222/super-agent/issues/3)): a real
-ReAct loop (`while stop_reason == tool_use`, bounded by `maxSteps`) over a
-pluggable provider (OpenAI), the message/turn model, a tool registry with
-`read_file` + `list_dir`, and a typed event stream. Tool errors feed back and
-the loop continues. Built on **P1 — agent skeleton**
-([#1](https://github.com/zq940222/super-agent/issues/1)). See the design doc for
-the roadmap (P4 context, P5 permissions, P6 more backends, P7 MCP, P8 subagents).
+**P6 — pluggable multi-backend** ([issue #5](https://github.com/zq940222/super-agent/issues/5)):
+the same `runAgent` loop drives **OpenAI or Anthropic**, chosen by config
+(`AGENT_PROVIDER`), proving the provider abstraction. Built on the reasoning
+loop (**P2**, [#3](https://github.com/zq940222/super-agent/issues/3)) and the
+skeleton (**P1**, [#1](https://github.com/zq940222/super-agent/issues/1)).
+Roadmap remaining: P4 context, P5 permissions, P7 MCP, P8 subagents.
 
 ## Setup
 
@@ -31,6 +30,9 @@ cp .env.example .env   # then put your OPENAI_API_KEY in .env
 bun run agent "what's in ./package.json?"
 # or pipe a prompt:
 echo "summarize ./README.md" | bun run agent
+
+# switch backend by config — same loop, different model:
+AGENT_PROVIDER=anthropic bun run agent "list src/ then explain engine.ts"
 ```
 
 You'll see the agent decide to call `read_file`, the (truncated) result, and its
@@ -56,7 +58,9 @@ src/
 │  └─ engine.ts    runAgent — the ReAct loop (while tool_use, maxSteps cap)
 ├─ providers/
 │  ├─ provider.ts  ModelProvider interface (the pluggable seam)
-│  └─ openai.ts    OpenAI adapter + pure wire-format normalizers
+│  ├─ openai.ts    OpenAI adapter + pure wire-format normalizers
+│  ├─ anthropic.ts Anthropic adapter + pure wire-format normalizers
+│  └─ factory.ts   createProvider(name) — picks a backend by config
 ├─ tools/
 │  ├─ registry.ts  ToolRegistry + defineTool (Zod → JSON Schema + validator)
 │  ├─ read-file.ts read_file (with built-in output truncation)
