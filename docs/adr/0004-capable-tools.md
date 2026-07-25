@@ -52,6 +52,21 @@ re-checked at every hop** (a `302` to `169.254.169.254` would otherwise bypass a
 check). Full DNS-rebinding defence (a hostname that *resolves* to a blocked IP) needs resolution
 and is deferred; the literal + per-hop check is cheap and unit-testable with zero network.
 
+### 3a. `web_search`: Brave, check-gated on a key (P14-2)
+
+`web_search` uses the **Brave Search API** (`GET res/v1/web/search`, `X-Subscription-Token`
+header, `web.results[].{title,url,description}`). Chosen over Google/Bing/SerpAPI for a real
+free tier and a single-key, no-OAuth setup that fits the from-scratch ethos; the `fetch` seam
+is injectable so a different backend (Tavily, …) can be added later as an adapter without
+touching callers.
+
+It's **check-gated** (Hermes' "unconfigured tools don't appear"): `createWebSearchTool()` reads
+`BRAVE_API_KEY`, and `check()` returns false when it's absent, so an unconfigured `web_search`
+is never offered to the model — better than surfacing a tool that only errors at call time.
+Brave `description` snippets carry highlight markup (`<strong>…`), so we strip tags and cap each
+snippet (output-size discipline, §4). No SSRF guard is needed: the endpoint is fixed, not
+model-chosen (unlike `web_fetch`). Same `medium`-risk posture as `web_fetch` (§2).
+
 ### 4. Tool-output size discipline (research checklist #3)
 
 Tool output is what fills the context window. Every tool that can return a lot (fetched pages

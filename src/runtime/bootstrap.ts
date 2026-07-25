@@ -24,6 +24,7 @@ import { readFileTool } from "../tools/read-file";
 import { listDirTool } from "../tools/list-dir";
 import { writeFileTool } from "../tools/write-file";
 import { createWebFetchTool } from "../tools/web-fetch";
+import { createWebSearchTool } from "../tools/web-search";
 import { ToolRegistry } from "../tools/registry";
 
 /** The agent's stable system prompt (skills catalog is appended at bootstrap). */
@@ -85,7 +86,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Runtime> {
     .register(readFileTool)
     .register(listDirTool)
     .register(writeFileTool)
-    .register(createWebFetchTool());
+    .register(createWebFetchTool())
+    // web_search self-gates on BRAVE_API_KEY via check() — registered always,
+    // but only offered to the model when a key is configured.
+    .register(createWebSearchTool());
 
   // Skills (P9): reusable procedure docs the agent can find, read, and author.
   const skills = new SkillStore(opts.skillsDir || process.env.AGENT_SKILLS_DIR || ".agent/skills");
