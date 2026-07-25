@@ -53,7 +53,7 @@ test("registers the native + skill + spawn_agent tools and builds the system pro
     try {
       const names = rt.registry.list().map((t) => t.name).sort();
       expect(names).toEqual(
-        ["create_skill", "find_skill", "list_dir", "read_file", "read_skill", "spawn_agent", "write_file"].sort(),
+        ["create_skill", "find_skill", "list_dir", "read_file", "read_skill", "spawn_agent", "web_fetch", "write_file"].sort(),
       );
       expect(rt.system.startsWith(SYSTEM)).toBe(true);
       expect(rt.system).toContain("create_skill"); // the skills catalog got appended
