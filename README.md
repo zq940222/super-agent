@@ -45,13 +45,18 @@ cp .env.example .env   # then set OPENAI_API_KEY (and/or ANTHROPIC_API_KEY)
 
 ## Run
 
-```bash
-bun run agent "what's in ./package.json?"
-echo "summarize ./README.md" | bun run agent
+The agent's file tools (`read_file` / `list_dir` / `write_file`) are confined to a
+**workspace directory** — `$AGENT_WORKSPACE`, or `./workspace` by default (created and
+git-ignored) — so generated files don't pollute the cwd/source. Point it at a folder to
+work on that folder:
 
-# switch backend by config — same loop, different model:
-AGENT_PROVIDER=anthropic bun run agent "list src/ then explain engine.ts"
-AGENT_PROVIDER=azure     bun run agent "list src/ then explain engine.ts"
+```bash
+# generate into ./workspace (nothing pollutes the repo):
+bun run agent "write a fitness plan to plan.md"
+
+# work on an existing folder — point AGENT_WORKSPACE at it:
+AGENT_WORKSPACE=. bun run agent "what's in ./package.json?"
+AGENT_WORKSPACE=. AGENT_PROVIDER=anthropic bun run agent "list src/ then explain engine.ts"
 ```
 
 For a persistent, multi-turn session, use the interactive TUI — same engine,

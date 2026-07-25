@@ -10,6 +10,7 @@ import { runAgent } from "../core/engine";
 import { EventEmitter, type AgentEvent } from "../core/events";
 import { type PermissionMode, type PermissionRequest } from "../permissions/gate";
 import { bootstrap, type Runtime } from "../runtime/bootstrap";
+import { resolveWorkspace } from "../runtime/workspace";
 import { createRollout } from "../session/rollout";
 
 const DIM = "\x1b[2m";
@@ -98,6 +99,8 @@ async function main(): Promise<void> {
 
   const events = new EventEmitter().on(render);
 
+  const workspaceRoot = resolveWorkspace();
+  process.stdout.write(`${DIM}(workspace: ${workspaceRoot})${RESET}\n`);
   const sessionPath = `.agent/sessions/${Date.now()}.jsonl`;
   const rollout = createRollout(sessionPath);
   const maxContextTokens = Number(process.env.AGENT_MAX_CONTEXT_TOKENS) || undefined;
@@ -109,7 +112,7 @@ async function main(): Promise<void> {
       system: runtime.system,
       policy: runtime.policy,
       approve,
-      workspaceRoot: process.cwd(),
+      workspaceRoot,
       maxContextTokens,
       rollout,
       events,

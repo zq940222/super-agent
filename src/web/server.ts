@@ -31,6 +31,8 @@ export interface WebServerOptions {
   /** The built client's HTML to serve at `/` (single-file build). Falls back to
    *  a placeholder when absent, so the API is usable before the client is built. */
   indexHtml?: string;
+  /** Directory the file tools are bounded to. Defaults to the cwd. */
+  workspaceRoot?: string;
   rollout?: RolloutRecorder;
   maxContextTokens?: number;
 }
@@ -164,7 +166,7 @@ export function createFetchHandler(opts: WebServerOptions): (req: Request) => Pr
             system: opts.runtime.system,
             policy: opts.runtime.policy,
             approve,
-            workspaceRoot: process.cwd(),
+            workspaceRoot: opts.workspaceRoot ?? process.cwd(),
             maxContextTokens: opts.maxContextTokens,
             rollout: opts.rollout,
             events,

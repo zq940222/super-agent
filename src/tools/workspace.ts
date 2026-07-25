@@ -11,14 +11,17 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { ToolContext } from "./registry";
 
 export function resolveInWorkspace(ctx: ToolContext, path: string): string {
-  const abs = resolve(ctx.cwd, path);
-  if (ctx.workspaceRoot) {
-    const root = resolve(ctx.workspaceRoot);
-    const rel = relative(root, abs);
-    const firstSegment = rel.split(sep)[0];
-    if (isAbsolute(rel) || firstSegment === "..") {
-      throw new Error(`Path escapes the workspace root: ${path}`);
-    }
+  // With no workspace, resolve against cwd and don't restrict (back-compat).
+  if (!ctx.workspaceRoot) return resolve(ctx.cwd, path);
+
+  // The workspace IS the agent's effective working directory: a RELATIVE path
+  // resolves inside it (so `./notes.md` lands in the workspace, not the launch
+  // cwd), and anything that escapes it — via `..` or an absolute path — is rejected.
+  const root = resolve(ctx.workspaceRoot);
+  const abs = resolve(root, path);
+  const rel = relative(root, abs);
+  if (isAbsolute(rel) || rel.split(sep)[0] === "..") {
+    throw new Error(`Path escapes the workspace root: ${path}`);
   }
   return abs;
 }

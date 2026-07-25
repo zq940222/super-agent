@@ -98,6 +98,8 @@ export interface ReplDeps {
   maxContextTokens?: number;
   /** Opt into token streaming (the TUI sets this). See ADR-0002. */
   stream?: boolean;
+  /** Directory the file tools are bounded to. Defaults to the cwd. */
+  workspaceRoot?: string;
 }
 
 /** Slash-commands that end the session. */
@@ -123,7 +125,7 @@ export async function runRepl(deps: ReplDeps): Promise<void> {
         system: deps.runtime.system,
         policy: deps.runtime.policy,
         approve: deps.approve,
-        workspaceRoot: process.cwd(),
+        workspaceRoot: deps.workspaceRoot ?? process.cwd(),
         maxContextTokens: deps.maxContextTokens,
         rollout: deps.rollout,
         events,

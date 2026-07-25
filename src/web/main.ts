@@ -12,6 +12,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { bootstrap, type Runtime } from "../runtime/bootstrap";
+import { resolveWorkspace } from "../runtime/workspace";
 import { serve } from "./server";
 import { createRollout } from "../session/rollout";
 import type { PermissionMode } from "../permissions/gate";
@@ -42,11 +43,13 @@ async function main(): Promise<void> {
 
   const token = crypto.randomUUID();
   const origin = `http://localhost:${port}`;
+  const workspaceRoot = resolveWorkspace();
   const rollout = createRollout(`.agent/sessions/web-${Date.now()}.jsonl`);
-  serve({ runtime, token, origin, indexHtml, rollout, port });
+  serve({ runtime, token, origin, indexHtml, workspaceRoot, rollout, port });
 
   process.stdout.write(`\nsuper-agent web UI · ${runtime.provider.name} · permissions: ${mode}\n`);
-  process.stdout.write(`  open  ${origin}/?token=${token}\n`);
+  process.stdout.write(`  open   ${origin}/?token=${token}\n`);
+  process.stdout.write(`  files  ${workspaceRoot}\n`);
   process.stdout.write(`  (Ctrl-C to stop)\n\n`);
 }
 

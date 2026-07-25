@@ -38,13 +38,17 @@ cp .env.example .env   # 然后填 OPENAI_API_KEY（和/或 ANTHROPIC_API_KEY）
 
 ## 运行
 
-```bash
-bun run agent "./package.json 里有什么？"
-echo "总结一下 ./README.md" | bun run agent
+agent 的文件工具（`read_file` / `list_dir` / `write_file`）被限制在一个**工作区目录**里——
+`$AGENT_WORKSPACE`，未设则默认 `./workspace`（自动创建、已 gitignore）——这样生成的文件不会污染
+启动目录/源码。想让它在某个文件夹上工作，就把 `AGENT_WORKSPACE` 指向那个文件夹：
 
-# 按配置切后端——同一个循环，不同模型：
-AGENT_PROVIDER=anthropic bun run agent "列出 src/，然后解释 engine.ts"
-AGENT_PROVIDER=azure     bun run agent "列出 src/，然后解释 engine.ts"
+```bash
+# 生成到 ./workspace（不污染仓库）：
+bun run agent "写一份健身计划到 plan.md"
+
+# 在某个已有文件夹上工作——把 AGENT_WORKSPACE 指过去：
+AGENT_WORKSPACE=. bun run agent "./package.json 里有什么？"
+AGENT_WORKSPACE=. AGENT_PROVIDER=anthropic bun run agent "列出 src/，然后解释 engine.ts"
 ```
 
 想要常驻的多轮对话，用交互式 TUI——同一个引擎，REPL 前端（输入任务，`/exit` 退出，
