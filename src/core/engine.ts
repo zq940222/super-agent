@@ -230,7 +230,7 @@ async function gateAndExecute(
       continue;
     }
 
-    const decision = policy.decide({ name: use.name, risk: tool.risk });
+    const decision = policy.decide({ name: use.name, risk: tool.risk, mutates: tool.mutates });
     if (decision === "allow") {
       plans.push({ use, allowed: true });
       continue;

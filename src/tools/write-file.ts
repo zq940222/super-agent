@@ -21,6 +21,7 @@ export const writeFileTool = defineTool({
     "Creates parent directories as needed. Use this whenever the user asks you to " +
     "write, save, generate, or create a file — do it directly, don't tell the user to do it.",
   risk: "low",
+  mutates: true, // low-risk (no prompt by default) but a write, so readonly denies it
   schema: z.object({
     path: z.string().min(1).describe("File path, relative to the working directory or absolute."),
     content: z.string().describe("The full text content to write."),

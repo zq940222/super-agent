@@ -44,6 +44,7 @@ export function createSkillTools(store: SkillStore): RegisteredTool[] {
       "Save a new reusable skill (a procedure guide) to your skill library, so you can find_skill/read_skill " +
       "it next time. Use it after working out how to do a non-trivial task.",
     risk: "medium",
+    mutates: true, // writes a skill file
     schema: z.object({
       name: z
         .string()

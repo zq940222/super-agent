@@ -54,6 +54,10 @@ test("declares low risk (writes run without a prompt under the default policy)",
   expect(writeFileTool.risk).toBe("low");
 });
 
+test("declares mutates (so readonly mode still blocks it despite low risk)", () => {
+  expect(writeFileTool.mutates).toBe(true);
+});
+
 // End-to-end wiring: the engine must route RunOptions.workspaceRoot into the tool
 // context so a relative write lands in the workspace, not the launch cwd. Guards
 // against a frontend dropping workspaceRoot from its runAgent call.
