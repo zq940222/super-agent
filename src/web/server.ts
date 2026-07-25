@@ -15,7 +15,7 @@
 
 import { runAgent } from "../core/engine";
 import { EventEmitter, type AgentEvent } from "../core/events";
-import type { Approver } from "../permissions/gate";
+import type { Approver, PermissionRequest } from "../permissions/gate";
 import type { Runtime } from "../runtime/bootstrap";
 import type { RolloutRecorder } from "../session/rollout";
 import type { Message } from "../core/types";
@@ -98,22 +98,29 @@ export function createFetchHandler(opts: WebServerOptions): (req: Request) => Pr
   // HITL bridge. The engine emits a `permission_request` event (the client sees
   // it in the stream); its `approve` call parks here until `POST /approve`
   // resolves it. Serialized (a promise chain) so at most one prompt is pending —
-  // the client answers "the current approval", no id needed. On disconnect the
-  // pending approval is denied, so a closed tab can't hang the run. ADR-0003 §4.
-  let pendingApproval: ((allow: boolean) => void) | null = null;
+  // the client answers "the current approval", no id needed. We keep the tool
+  // `name` so an "always" decision can grant a session allow-rule. On disconnect
+  // the pending approval is denied, so a closed tab can't hang the run. ADR-0003 §4.
+  let pendingApproval: { name: string; resolve: (allow: boolean) => void } | null = null;
 
   function makeApprover(signal: AbortSignal): Approver {
     let tail: Promise<unknown> = Promise.resolve();
-    const one = (): Promise<boolean> =>
+    const one = (req: PermissionRequest): Promise<boolean> =>
       new Promise<boolean>((resolve) => {
         if (signal.aborted) return resolve(false); // disconnected before we asked → deny
-        pendingApproval = (allow) => {
-          pendingApproval = null;
-          resolve(allow);
+        pendingApproval = {
+          name: req.name,
+          resolve: (allow) => {
+            pendingApproval = null;
+            resolve(allow);
+          },
         };
       });
-    return () => {
-      const next = tail.then(one, one);
+    return (req) => {
+      const next = tail.then(
+        () => one(req),
+        () => one(req),
+      );
       tail = next.then(
         () => undefined,
         () => undefined,
@@ -136,7 +143,7 @@ export function createFetchHandler(opts: WebServerOptions): (req: Request) => Pr
     running = true;
     // Disconnect denies any pending approval so gateAndExecute unblocks and the
     // run reaches its abort check instead of hanging.
-    req.signal.addEventListener("abort", () => pendingApproval?.(false), { once: true });
+    req.signal.addEventListener("abort", () => pendingApproval?.resolve(false), { once: true });
     const approve = makeApprover(req.signal);
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
@@ -197,9 +204,13 @@ export function createFetchHandler(opts: WebServerOptions): (req: Request) => Pr
     } catch {
       /* tolerate an empty body → treated as deny */
     }
-    const allow = body.decision === "allow" || body.allow === true;
-    pendingApproval(allow);
-    return json(200, { ok: true, decision: allow ? "allow" : "deny" });
+    // "always" allows this call AND grants a session allow-rule, so the same tool
+    // stops prompting for the rest of the session (uses the shared policy).
+    const always = body.decision === "always";
+    const allow = always || body.decision === "allow" || body.allow === true;
+    if (always) opts.runtime.policy.allowForSession(pendingApproval.name);
+    pendingApproval.resolve(allow);
+    return json(200, { ok: true, decision: always ? "always" : allow ? "allow" : "deny" });
   }
 
   return (req: Request): Promise<Response> | Response => {
