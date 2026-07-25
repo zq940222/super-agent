@@ -70,8 +70,10 @@ cd web && bun install && bun run build && cd ..
 bun run web
 ```
 
-Writing a file is high-risk, so under the default policy the agent asks before
-`write_file` runs. To give it external tools, drop an `mcp.json` in the cwd (see
+`write_file` is low-risk, so under the default policy the agent writes files
+without asking (medium/high-risk tools like `create_skill` or MCP tools still
+prompt; run in `readonly` mode to disallow the risky ones). To give it external
+tools, drop an `mcp.json` in the cwd (see
 [`mcp.json.example`](mcp.json.example)); each server's tools appear as
 `mcp__<server>__<tool>` and are gated like any other tool.
 
@@ -125,7 +127,7 @@ src/
 │  ├─ workspace.ts   resolveInWorkspace — file-tool path boundary
 │  ├─ read-file.ts   read_file (output truncation)
 │  ├─ list-dir.ts    list_dir (capped listing)
-│  └─ write-file.ts  write_file (high-risk; gated)
+│  └─ write-file.ts  write_file (low-risk; runs by default)
 ├─ session/
 │  └─ rollout.ts     append-only JSONL session persistence
 ├─ mcp/
