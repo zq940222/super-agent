@@ -32,6 +32,12 @@ export interface RegisteredTool {
   spec: ToolSpec;
   handler: ToolHandler;
   risk: Risk;
+  /**
+   * Whether the tool changes state (writes files, etc.). Independent of `risk`:
+   * `readonly` mode denies mutating tools so it stays truly read-only even for
+   * low-risk writers like write_file. Defaults to false. See permissions/gate.ts.
+   */
+  mutates?: boolean;
   /** Validate/coerce raw model input before the handler runs. */
   validate?: (input: unknown) => Validation;
   /** Return false to hide this tool from the model this session. */
@@ -72,6 +78,8 @@ export function defineTool<S extends z.ZodType>(opts: {
   description: string;
   schema: S;
   risk?: Risk;
+  /** Marks the tool as state-changing (see RegisteredTool.mutates). */
+  mutates?: boolean;
   handler: (input: z.infer<S>, ctx: ToolContext) => Promise<string> | string;
   check?: () => boolean;
 }): RegisteredTool {
@@ -79,6 +87,7 @@ export function defineTool<S extends z.ZodType>(opts: {
   return {
     spec: { name: opts.name, description: opts.description, inputSchema },
     risk: opts.risk ?? "low",
+    mutates: opts.mutates ?? false,
     handler: opts.handler as ToolHandler,
     check: opts.check,
     validate: (input: unknown): Validation => {

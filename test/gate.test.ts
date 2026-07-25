@@ -22,6 +22,17 @@ test("readonly mode denies anything not low-risk", () => {
   expect(p.decide(tool("write_file", "high"))).toBe("deny");
 });
 
+test("readonly mode denies a mutating tool even when it is low-risk", () => {
+  const p = new PermissionPolicy({ mode: "readonly" });
+  expect(p.decide({ name: "read_file", risk: "low", mutates: false })).toBe("allow");
+  expect(p.decide({ name: "write_file", risk: "low", mutates: true })).toBe("deny"); // the point
+});
+
+test("default mode ignores `mutates` — a low-risk write runs without asking", () => {
+  const p = new PermissionPolicy(); // default
+  expect(p.decide({ name: "write_file", risk: "low", mutates: true })).toBe("allow");
+});
+
 test("precedence: deny > ask > allow > mode", () => {
   const p = new PermissionPolicy({ mode: "auto", deny: ["a"], ask: ["b"], allow: ["c"] });
   expect(p.decide(tool("a", "low"))).toBe("deny");

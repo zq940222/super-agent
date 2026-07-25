@@ -222,12 +222,11 @@ P12 让 `bun run tui` 逐 token 渲染答案。难点不是线协议，而是**�
 [`tools/read-file.ts`](../src/tools/read-file.ts)。给它合适的 `risk`（`low` 免问、
 `medium`/`high` 默认要审批），文件类工具用 `resolveInWorkspace(ctx, path)` 守住工作区边界。
 
-> **`risk` 一身兼二职，改它要想清楚（真踩过的坑）。** 权限门里 `risk` 同时决定两件事:
-> `default` 模式**是否要审批**(`low` 直接跑),以及 `readonly` 模式**是否放行**(只放 `low`)。
-> 也就是说 `risk` 把"**有多危险**"和"**会不会改文件系统**"两个维度压成了一个。所以把
-> `write_file` 从 `high` 降到 `low`(让它默认不再打断用户),连带就让 `readonly` 也不再拦它了
-> ——readonly 失去了"禁写"的语义。若要既默认免问、又能被 readonly 挡住,得给工具加一个独立的
-> "是否修改状态"标记,让 `readonly` 按它拦截,而不是只看 `risk`。审批面向用户的体验则另有开关:
+> **别把两个维度压进一个字段（真踩过的坑）。** 一开始 `risk` 同时决定 `default` 是否审批 *和*
+> `readonly` 是否放行——把"**有多危险**"和"**会不会改状态**"混成了一个。于是把 `write_file`
+> 从 `high` 降到 `low`(让它默认不打断用户),连带就让 `readonly` 也不拦它了。修法是给工具加一个
+> **独立的 `mutates` 标记**:`readonly` 现在放行"**低风险且不改状态**"的工具(读类照跑,`write_file`
+> 被挡),`default` 只看 `risk`(低风险直接跑)——两个维度各归各。审批面向用户的体验则另有开关:
 > TUI 的"始终允许"(`a`)、web 弹窗的 **Always allow**,底层都是 `policy.allowForSession()`。
 
 **加一个后端**：实现 `ModelProvider`（一个 `generate(req)` 方法），在 adapter 里把该家的

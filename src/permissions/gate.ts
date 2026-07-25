@@ -64,7 +64,7 @@ export class PermissionPolicy {
     this.allow.add(name);
   }
 
-  decide(tool: { name: string; risk: Risk }): Decision {
+  decide(tool: { name: string; risk: Risk; mutates?: boolean }): Decision {
     if (this.deny.has(tool.name)) return "deny";
     if (this.ask.has(tool.name)) return "ask";
     if (this.allow.has(tool.name)) return "allow";
@@ -72,7 +72,9 @@ export class PermissionPolicy {
       case "auto":
         return "allow";
       case "readonly":
-        return tool.risk === "low" ? "allow" : "deny";
+        // Truly read-only: allow only low-risk, NON-mutating tools. This keeps
+        // readonly blocking writes even though write_file is low-risk.
+        return tool.risk === "low" && !tool.mutates ? "allow" : "deny";
       case "default":
         return tool.risk === "low" ? "allow" : "ask";
     }
