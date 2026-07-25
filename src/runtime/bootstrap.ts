@@ -23,14 +23,16 @@ import { createSkillTools, skillsCatalog } from "../skills/tools";
 import { readFileTool } from "../tools/read-file";
 import { listDirTool } from "../tools/list-dir";
 import { writeFileTool } from "../tools/write-file";
+import { createWebFetchTool } from "../tools/web-fetch";
 import { ToolRegistry } from "../tools/registry";
 
 /** The agent's stable system prompt (skills catalog is appended at bootstrap). */
 export const SYSTEM = [
   "You are super-agent, a general-purpose assistant running in a terminal.",
   "You can call tools: list_dir to explore directories, read_file to read files,",
-  "write_file to create or overwrite files, and spawn_agent to delegate a",
-  "self-contained subtask to a fresh subagent (which returns only its final answer).",
+  "write_file to create or overwrite files, web_fetch to fetch a web page's text,",
+  "and spawn_agent to delegate a self-contained subtask to a fresh subagent",
+  "(which returns only its final answer).",
   "Break the task into steps, use tools to gather what you need,",
   "and when you have enough information, answer the user directly and concisely.",
 ].join(" ");
@@ -82,7 +84,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Runtime> {
   const registry = new ToolRegistry()
     .register(readFileTool)
     .register(listDirTool)
-    .register(writeFileTool);
+    .register(writeFileTool)
+    .register(createWebFetchTool());
 
   // Skills (P9): reusable procedure docs the agent can find, read, and author.
   const skills = new SkillStore(opts.skillsDir || process.env.AGENT_SKILLS_DIR || ".agent/skills");
