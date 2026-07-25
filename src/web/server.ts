@@ -28,6 +28,9 @@ export interface WebServerOptions {
   token: string;
   /** Our own origin, e.g. "http://localhost:8787" — requests must match it. */
   origin: string;
+  /** The built client's HTML to serve at `/` (single-file build). Falls back to
+   *  a placeholder when absent, so the API is usable before the client is built. */
+  indexHtml?: string;
   rollout?: RolloutRecorder;
   maxContextTokens?: number;
 }
@@ -167,6 +170,7 @@ export function createFetchHandler(opts: WebServerOptions): (req: Request) => Pr
           write({ type: "error", message: err instanceof Error ? err.message : String(err) });
         } finally {
           running = false;
+          pendingApproval = null; // this run owns the slot; don't let a late abort touch the next run
           try {
             controller.close();
           } catch {
@@ -206,10 +210,10 @@ export function createFetchHandler(opts: WebServerOptions): (req: Request) => Pr
     if (req.method === "POST" && url.pathname === "/prompt") return handlePrompt(req);
     if (req.method === "POST" && url.pathname === "/approve") return handleApprove(req);
     if (url.pathname === "/") {
-      // P13-4 serves the built React client here; a minimal placeholder for now.
-      return new Response("<!doctype html><title>super-agent</title><p>web UI — client pending (P13-3)</p>", {
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
+      const html =
+        opts.indexHtml ??
+        "<!doctype html><title>super-agent</title><p>web UI — build the client: <code>cd web && bun run build</code></p>";
+      return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
     }
     return json(404, { error: "not found" });
   };

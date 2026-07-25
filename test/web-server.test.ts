@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { authorize, createFetchHandler } from "../src/web/server";
+import { authorize, createFetchHandler, serve } from "../src/web/server";
 import { bootstrap, type Runtime } from "../src/runtime/bootstrap";
 import { defineTool } from "../src/tools/registry";
 import type { AgentEvent } from "../src/core/events";
@@ -145,6 +145,28 @@ test("authorize enforces token, then origin, then host", () => {
   expect(authorize({ ...base, provided: "t", reqOrigin: "http://localhost:8787" })).toEqual({ ok: true }); // same-origin ok
   expect(authorize({ ...base, provided: "t", host: "evil.test" })).toMatchObject({ ok: false, status: 403 });
   expect(authorize({ ...base, provided: "t", host: "127.0.0.1:9999" })).toEqual({ ok: true });
+});
+
+// --- serve(): the real entrypoint is gated + serves the client ---
+
+test("serve() applies the auth gate and serves the built client at /", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sa-web-"));
+  const runtime = await bootstrap({ provider: new ScriptedProvider([endTurn("x")]), loadMcp: false, skillsDir: join(dir, "skills") });
+  const server = serve({ runtime, token: TOKEN, origin: "http://localhost", indexHtml: "<h1>client-marker</h1>", port: 0 });
+  try {
+    const base = `http://localhost:${server.port}`;
+    // The entrypoint gates a tokenless request (someone can't drop the auth wrapper).
+    const un = await fetch(`${base}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    expect(un.status).toBe(401);
+    // GET /?token= serves the built client HTML.
+    const page = await fetch(`${base}/?token=${TOKEN}`);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("client-marker");
+  } finally {
+    server.stop(true);
+    await runtime.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 // --- HTTP ---

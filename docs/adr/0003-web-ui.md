@@ -57,13 +57,21 @@ endpoint is local-RCE-adjacent. **Binding to `127.0.0.1` does not protect it:** 
 in the user's browser can fire a no-preflight `POST` to `http://127.0.0.1:<port>` or open the
 stream and exfiltrate output. So the first thing every request hits:
 
-- **A per-session token**, required on *every* route including the event stream. Generated on
-  startup, printed to the terminal, and embedded in the served HTML so the legitimate
-  same-origin client has it — the Same-Origin Policy keeps an attacker page from reading it.
+- **A per-session token**, required on *every* route including the initial `GET /` and the
+  event stream. Generated on startup and printed in the URL (`/?token=…`); the client reads it
+  from the query and remembers it for the tab (`sessionStorage`), sending it on every request.
 - **An `Origin`/`Host` allowlist** — reject anything not from the server's own localhost
   origin. This blocks CSRF and DNS-rebinding.
 
-The auth check wraps the router so no route can be added that skips it.
+The auth check wraps the router (`serve()` is the only public entrypoint) so no route can be
+added that skips it.
+
+**Token-in-URL is accepted, consciously (P13-4).** The token sits in the address bar and
+history — the Jupyter-grade posture, fine for a localhost single-user tool. It is deliberately
+*not* scrubbed (`history.replaceState`): scrubbing would break reload, because the reload's
+`GET /` for the HTML carries no token (the JS that reads `sessionStorage` hasn't run yet) and
+would 401. Reload-safe token-in-URL beats a scrub that needs a `Set-Cookie` session to survive
+reload — the cookie path is deferred.
 
 ### 4. Disconnect cancels the run AND rejects any pending approval
 
@@ -72,9 +80,22 @@ resolve and the run would hang holding resources (the web analogue of the TUI's 
 Ctrl-C-at-approval, but with no human to press `n`). The server ties the pending-approval
 lifecycle to `request.signal`: on abort, pending approvals reject/deny and the run cancels.
 
-HITL: the server's `approve` returns a Promise keyed by a request id, streamed to the client
-as a `permission_request` event; the client `POST /approve`s the decision, which resolves the
-Promise. Serialized like the TUI approver.
+HITL: the engine emits a `permission_request` event (the client sees it in the stream) and its
+`approve` call parks a single pending resolver; the client `POST /approve`s the decision, which
+resolves it. Serialized like the TUI approver, so at most one approval is outstanding — the
+client answers "the current approval", **no id needed**.
+
+**v1 scopes the bridge to the main loop (P13-4).** The `bun run web` entry bootstraps the
+runtime with *no* approver, so a subagent's ask-tier tool auto-denies (fail-closed) rather than
+routing to the browser. This keeps the bridge single-caller and sequential — the serialized
+chain and the shared pending-resolver are never under real concurrency. Routing subagent
+approvals to the browser (which would need per-run scoping of the resolver and a
+concurrent-approval test) is deferred.
+
+This is a **UX boundary, not a security hole, and it rests on `spawn_agent` being low-risk**
+(so the parent delegates freely; only the child's ask-tier tools deny). If `spawn_agent` is
+ever made ask-tier, delegation itself would prompt the browser, but a delegated task needing
+`write_file` would still silently dead-end — revisit the subagent-approval routing then.
 
 ### 5. Reuse the pure pieces, not the renderer
 
