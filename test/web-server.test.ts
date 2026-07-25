@@ -311,6 +311,34 @@ test("POST /approve deny blocks the gated tool (isError result)", async () => {
   });
 });
 
+test('POST /approve "always" runs the tool and stops prompting for it this session', async () => {
+  // Two calls to the gated tool across two turns; only the FIRST should prompt.
+  const provider = new ScriptedProvider([
+    toolUseTurn("t1", "danger", {}),
+    toolUseTurn("t2", "danger", {}),
+    endTurn("done"),
+  ]);
+  await withServer(provider, async ({ base, headers, runtime }) => {
+    const gated = makeGatedTool();
+    runtime.registry.register(gated.tool);
+    const resp = await fetch(`${base}/prompt`, { method: "POST", headers, body: JSON.stringify({ prompt: "twice" }) });
+    let prompts = 0;
+    const events = await readReacting(resp, async (e) => {
+      if (e.type === "permission_request") {
+        prompts += 1;
+        await fetch(`${base}/approve`, { method: "POST", headers, body: JSON.stringify({ decision: "always" }) });
+      }
+    });
+    // "always" granted a session allow-rule, so the second call never prompted.
+    expect(prompts).toBe(1);
+    // Both calls ran.
+    expect(events.filter((e) => e.type === "tool_result" && e.content === "danger done").length).toBe(2);
+    expect(gated.ran()).toBe(true);
+    // The shared policy now auto-allows the tool.
+    expect(runtime.policy.decide({ name: "danger", risk: "high" })).toBe("allow");
+  });
+});
+
 test("POST /approve with no pending approval is 409", async () => {
   await withServer(new ScriptedProvider([endTurn("x")]), async ({ base, headers }) => {
     const r = await fetch(`${base}/approve`, { method: "POST", headers, body: JSON.stringify({ decision: "allow" }) });

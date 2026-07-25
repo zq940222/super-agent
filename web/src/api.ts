@@ -46,6 +46,6 @@ export async function* runPrompt(prompt: string, signal: AbortSignal): AsyncGene
   if (buf.trim()) yield JSON.parse(buf) as AgentEvent;
 }
 
-export async function sendApproval(decision: "allow" | "deny"): Promise<void> {
+export async function sendApproval(decision: "allow" | "deny" | "always"): Promise<void> {
   await fetch("/approve", { method: "POST", headers: authHeaders(), body: JSON.stringify({ decision }) });
 }

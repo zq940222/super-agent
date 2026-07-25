@@ -54,7 +54,7 @@ export function App(): JSX.Element {
     }
   }
 
-  async function decide(decision: "allow" | "deny"): Promise<void> {
+  async function decide(decision: "allow" | "deny" | "always"): Promise<void> {
     setPending(null);
     await sendApproval(decision);
   }
@@ -119,7 +119,10 @@ export function App(): JSX.Element {
                 Deny
               </button>
               <button className="allow" onClick={() => void decide("allow")}>
-                Allow
+                Allow once
+              </button>
+              <button className="always" onClick={() => void decide("always")}>
+                Always allow
               </button>
             </div>
           </>
