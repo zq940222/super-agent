@@ -5,6 +5,7 @@ import { applyEvent, type Item } from "./transcript";
 interface Pending {
   name: string;
   input: unknown;
+  risk: string;
 }
 
 export function App(): JSX.Element {
@@ -40,7 +41,7 @@ export function App(): JSX.Element {
     try {
       for await (const ev of runPrompt(prompt, ac.signal)) {
         setItems((prev) => applyEvent(prev, ev));
-        if (ev.type === "permission_request") setPending({ name: ev.name, input: ev.input });
+        if (ev.type === "permission_request") setPending({ name: ev.name, input: ev.input, risk: ev.risk });
         if (ev.type === "permission_decision") setPending(null);
       }
     } catch (err) {
@@ -121,9 +122,12 @@ export function App(): JSX.Element {
               <button className="allow" onClick={() => void decide("allow")}>
                 Allow once
               </button>
-              <button className="always" onClick={() => void decide("always")}>
-                Always allow
-              </button>
+              {/* High-risk tools can't be always-allowed (ADR-0005 §3) — don't offer it. */}
+              {pending.risk !== "high" && (
+                <button className="always" onClick={() => void decide("always")}>
+                  Always allow
+                </button>
+              )}
             </div>
           </>
         )}

@@ -25,6 +25,7 @@ import { listDirTool } from "../tools/list-dir";
 import { writeFileTool } from "../tools/write-file";
 import { createWebFetchTool } from "../tools/web-fetch";
 import { createWebSearchTool } from "../tools/web-search";
+import { createShellTool } from "../tools/shell";
 import { ToolRegistry } from "../tools/registry";
 
 /** The agent's stable system prompt (skills catalog is appended at bootstrap). */
@@ -32,6 +33,7 @@ export const SYSTEM = [
   "You are super-agent, a general-purpose assistant running in a terminal.",
   "You can call tools: list_dir to explore directories, read_file to read files,",
   "write_file to create or overwrite files, web_fetch to fetch a web page's text,",
+  "shell to run a command (non-interactive, in the workspace, scrubbed env),",
   "and spawn_agent to delegate a self-contained subtask to a fresh subagent",
   "(which returns only its final answer).",
   "Break the task into steps, use tools to gather what you need,",
@@ -89,7 +91,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Runtime> {
     .register(createWebFetchTool())
     // web_search self-gates on BRAVE_API_KEY via check() — registered always,
     // but only offered to the model when a key is configured.
-    .register(createWebSearchTool());
+    .register(createWebSearchTool())
+    // shell's child env is a fail-closed allowlist; AGENT_SHELL_ENV_PASSTHROUGH
+    // (comma/space-separated var names) opts extra vars into it. See ADR-0005 §6.
+    .register(createShellTool({ extraAllowlist: parseEnvNames(process.env.AGENT_SHELL_ENV_PASSTHROUGH) }));
 
   // Skills (P9): reusable procedure docs the agent can find, read, and author.
   const skills = new SkillStore(opts.skillsDir || process.env.AGENT_SKILLS_DIR || ".agent/skills");
@@ -127,6 +132,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Runtime> {
       await Promise.all(mcpClients.map((c) => c.close()));
     },
   };
+}
+
+/** Parse a comma/whitespace-separated list of env-var names (for shell passthrough). */
+function parseEnvNames(raw: string | undefined): string[] {
+  return (raw ?? "").split(/[\s,]+/).filter(Boolean);
 }
 
 /** Connect any MCP servers declared in ./mcp.json and register their tools. */

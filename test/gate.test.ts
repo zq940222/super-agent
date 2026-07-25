@@ -62,3 +62,22 @@ test("allowForSession cannot punch through an explicit deny", () => {
   p.allowForSession("danger");
   expect(p.decide(tool("danger", "low"))).toBe("deny");
 });
+
+test("allowForSession refuses to persist a high-risk rule (ADR-0005 §3)", () => {
+  const p = new PermissionPolicy(); // default mode
+  expect(p.allowForSession("shell", "high")).toBe(false); // the one-click is refused
+  // …so shell keeps asking every call instead of being allowed for the session.
+  expect(p.decide(tool("shell", "high"))).toBe("ask");
+});
+
+test("allowForSession still persists low/medium rules (returns true)", () => {
+  const p = new PermissionPolicy();
+  expect(p.allowForSession("web_fetch", "medium")).toBe(true);
+  expect(p.decide(tool("web_fetch", "medium"))).toBe("allow");
+});
+
+test("a deliberate construction-time allow still pre-authorizes a high-risk tool", () => {
+  // Only the runtime one-click is refused; an up-front operator choice is honored.
+  const p = new PermissionPolicy({ allow: ["shell"] });
+  expect(p.decide(tool("shell", "high"))).toBe("allow");
+});
