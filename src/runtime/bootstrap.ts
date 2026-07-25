@@ -23,6 +23,8 @@ import { createSkillTools, skillsCatalog } from "../skills/tools";
 import { readFileTool } from "../tools/read-file";
 import { listDirTool } from "../tools/list-dir";
 import { writeFileTool } from "../tools/write-file";
+import { globTool } from "../tools/glob";
+import { grepTool } from "../tools/grep";
 import { createWebFetchTool } from "../tools/web-fetch";
 import { createWebSearchTool } from "../tools/web-search";
 import { createShellTool } from "../tools/shell";
@@ -32,6 +34,7 @@ import { ToolRegistry } from "../tools/registry";
 export const SYSTEM = [
   "You are super-agent, a general-purpose assistant running in a terminal.",
   "You can call tools: list_dir to explore directories, read_file to read files,",
+  "glob to find files by name pattern, grep to search file contents,",
   "write_file to create or overwrite files, web_fetch to fetch a web page's text,",
   "shell to run a command (non-interactive, in the workspace, scrubbed env),",
   "and spawn_agent to delegate a self-contained subtask to a fresh subagent",
@@ -88,6 +91,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Runtime> {
     .register(readFileTool)
     .register(listDirTool)
     .register(writeFileTool)
+    .register(globTool)
+    .register(grepTool)
     .register(createWebFetchTool())
     // web_search self-gates on BRAVE_API_KEY via check() — registered always,
     // but only offered to the model when a key is configured.
