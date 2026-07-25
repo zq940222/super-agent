@@ -17,6 +17,7 @@
 
 import { z } from "zod";
 import { defineTool, type RegisteredTool } from "./registry";
+import { applySandbox, sandboxModeFromEnv, type SandboxConfig } from "./sandbox";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 600_000; // 10 min hard cap
@@ -117,6 +118,8 @@ export interface ShellOptions {
   extraAllowlist?: string[];
   /** Inject explicit env values (as opposed to passing through from the agent's env). */
   extraEnv?: Record<string, string>;
+  /** OS-sandbox config (ADR-0007). Default: mode from `AGENT_SHELL_SANDBOX` (else `auto`). */
+  sandbox?: SandboxConfig;
 }
 
 export function createShellTool(opts: ShellOptions = {}): RegisteredTool {
@@ -126,6 +129,7 @@ export function createShellTool(opts: ShellOptions = {}): RegisteredTool {
   // `envAllowlist` replaces the default; otherwise the default plus any `extraAllowlist` opt-ins.
   const allowlist = opts.envAllowlist ?? [...DEFAULT_ENV_ALLOWLIST, ...(opts.extraAllowlist ?? [])];
   const extraEnv = opts.extraEnv ?? {};
+  const sandbox: SandboxConfig = opts.sandbox ?? { mode: sandboxModeFromEnv(process.env.AGENT_SHELL_SANDBOX) };
 
   return defineTool({
     name: "shell",
@@ -135,6 +139,9 @@ export function createShellTool(opts: ShellOptions = {}): RegisteredTool {
       "until the timeout), in the agent's workspace directory, with a MINIMAL scrubbed " +
       "environment (API keys and most vars are NOT inherited — only PATH/HOME and a few others). " +
       "Use it for builds, tests, git, and file operations. Long output is truncated with a marker. " +
+      "When sandboxed (default on macOS), a command CANNOT reach the network, and can only write " +
+      "under the workspace and temp dirs — so `curl`/`npm install`/`git fetch` will fail; say so " +
+      "rather than retrying. " +
       "High-risk: it can modify or delete anything, so it asks for approval on each call.",
     risk: "high",
     mutates: true,
@@ -155,9 +162,15 @@ export function createShellTool(opts: ShellOptions = {}): RegisteredTool {
       const timeoutMs = timeout_ms ? clampTimeout(timeout_ms) : defaultTimeout;
       const env = buildEnv(allowlist, extraEnv);
 
+      // Wrap the command in the OS sandbox (ADR-0007). A fail-closed refusal
+      // (require mode with no mechanism, or an unrepresentable path) returns a
+      // string; otherwise the cmd is rewritten to run under sandbox-exec.
+      const boxed = applySandbox({ cmd: ["sh", "-c", command], cwd, env, timeoutMs }, sandbox);
+      if ("error" in boxed) return boxed.error;
+
       let result: SpawnResult;
       try {
-        result = await doSpawn({ cmd: ["sh", "-c", command], cwd, env, timeoutMs });
+        result = await doSpawn(boxed.args);
       } catch (err) {
         return `shell failed to start: ${err instanceof Error ? err.message : String(err)}`;
       }

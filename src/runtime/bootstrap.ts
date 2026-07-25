@@ -29,6 +29,7 @@ import { grepTool } from "../tools/grep";
 import { createWebFetchTool } from "../tools/web-fetch";
 import { createWebSearchTool } from "../tools/web-search";
 import { createShellTool } from "../tools/shell";
+import { describeSandbox, sandboxModeFromEnv, type SandboxConfig } from "../tools/sandbox";
 import { ToolRegistry } from "../tools/registry";
 
 /** The agent's stable system prompt (skills catalog is appended at bootstrap). */
@@ -89,6 +90,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Runtime> {
   const policy = opts.policy ?? new PermissionPolicy({ mode });
   opts.log?.(`backend: ${provider.name} · permissions: ${mode}`);
 
+  // Resolve the shell sandbox once so its status is announced loudly at startup
+  // (ADR-0007 §4 — an unsandboxed fallback must not be silent) and the same
+  // config drives the tool.
+  const sandbox: SandboxConfig = { mode: sandboxModeFromEnv(process.env.AGENT_SHELL_SANDBOX) };
+  opts.log?.(describeSandbox(sandbox));
+
   const registry = new ToolRegistry()
     .register(readFileTool)
     .register(listDirTool)
@@ -102,7 +109,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Runtime> {
     .register(createWebSearchTool())
     // shell's child env is a fail-closed allowlist; AGENT_SHELL_ENV_PASSTHROUGH
     // (comma/space-separated var names) opts extra vars into it. See ADR-0005 §6.
-    .register(createShellTool({ extraAllowlist: parseEnvNames(process.env.AGENT_SHELL_ENV_PASSTHROUGH) }));
+    // Sandbox (ADR-0007) confines writes + denies network when a mechanism exists.
+    .register(createShellTool({ extraAllowlist: parseEnvNames(process.env.AGENT_SHELL_ENV_PASSTHROUGH), sandbox }));
 
   // Skills (P9): reusable procedure docs the agent can find, read, and author.
   const skills = new SkillStore(opts.skillsDir || process.env.AGENT_SKILLS_DIR || ".agent/skills");

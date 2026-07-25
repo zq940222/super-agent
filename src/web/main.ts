@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { bootstrap, type Runtime } from "../runtime/bootstrap";
 import { resolveWorkspace } from "../runtime/workspace";
+import { describeSandbox, sandboxModeFromEnv } from "../tools/sandbox";
 import { serve } from "./server";
 import { createRollout } from "../session/rollout";
 import type { PermissionMode } from "../permissions/gate";
@@ -50,6 +51,9 @@ async function main(): Promise<void> {
   process.stdout.write(`\nsuper-agent web UI · ${runtime.provider.name} · permissions: ${mode}\n`);
   process.stdout.write(`  open   ${origin}/?token=${token}\n`);
   process.stdout.write(`  files  ${workspaceRoot}\n`);
+  // Announce shell-sandbox status here too: web doesn't pass `log` to bootstrap
+  // (it prints its own summary), and the browser has no badge yet (ADR-0007 §6).
+  process.stdout.write(`  ${describeSandbox({ mode: sandboxModeFromEnv(process.env.AGENT_SHELL_SANDBOX) })}\n`);
   process.stdout.write(`  (Ctrl-C to stop)\n\n`);
 }
 
