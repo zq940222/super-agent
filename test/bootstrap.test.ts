@@ -59,7 +59,7 @@ test("registers the native + skill + spawn_agent tools and builds the system pro
       const names = rt.registry.list().map((t) => t.name).sort();
       expect(names).toEqual(
         // web_search is absent: no Brave key ⇒ check() hides it from the model.
-        ["create_skill", "find_skill", "glob", "grep", "list_dir", "read_file", "read_skill", "shell", "spawn_agent", "web_fetch", "write_file"].sort(),
+        ["create_skill", "edit_file", "find_skill", "glob", "grep", "list_dir", "read_file", "read_skill", "shell", "spawn_agent", "web_fetch", "write_file"].sort(),
       );
       expect(rt.system.startsWith(SYSTEM)).toBe(true);
       expect(rt.system).toContain("create_skill"); // the skills catalog got appended
