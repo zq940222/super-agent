@@ -40,13 +40,20 @@ function preview(text: string, n = 60): string {
 export function createApprover(policy: PermissionPolicy, io: ApproverIO): Approver {
   const one = async (req: PermissionRequest): Promise<boolean> => {
     const label = `${req.name}(${preview(JSON.stringify(req.input))})`;
+    // High-risk tools can't be "always"-allowed (ADR-0005 §3), so don't offer the
+    // choice — showing it and then silently re-prompting would mislead the user.
+    const highRisk = req.risk === "high";
+    const prompt = highRisk
+      ? `🔐 Allow ${label}? (high-risk — asks every time) [y]es / [n]o `
+      : `🔐 Allow ${label}? [y]es / [n]o / [a]lways `;
     let choice: ApprovalChoice | null = null;
     while (choice === null) {
-      choice = choiceFromInput(await io.ask(`🔐 Allow ${label}? [y]es / [n]o / [a]lways `));
+      choice = choiceFromInput(await io.ask(prompt));
     }
     // "always" grants a session allow-rule on the SHARED policy, so the engine
-    // stops routing this tool to `ask` on later turns (the decision persists).
-    if (choice === "always") policy.allowForSession(req.name);
+    // stops routing this tool to `ask` on later turns. allowForSession refuses a
+    // high-risk rule, so even a typed 'a' only approves this one call.
+    if (choice === "always") policy.allowForSession(req.name, req.risk);
     return choice !== "no";
   };
 

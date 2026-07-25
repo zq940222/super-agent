@@ -103,7 +103,9 @@ export function createFetchHandler(opts: WebServerOptions): (req: Request) => Pr
   // the client answers "the current approval", no id needed. We keep the tool
   // `name` so an "always" decision can grant a session allow-rule. On disconnect
   // the pending approval is denied, so a closed tab can't hang the run. ADR-0003 §4.
-  let pendingApproval: { name: string; resolve: (allow: boolean) => void } | null = null;
+  let pendingApproval:
+    | { name: string; risk: PermissionRequest["risk"]; resolve: (allow: boolean) => void }
+    | null = null;
 
   function makeApprover(signal: AbortSignal): Approver {
     let tail: Promise<unknown> = Promise.resolve();
@@ -112,6 +114,7 @@ export function createFetchHandler(opts: WebServerOptions): (req: Request) => Pr
         if (signal.aborted) return resolve(false); // disconnected before we asked → deny
         pendingApproval = {
           name: req.name,
+          risk: req.risk, // so an "always" decision can honor the high-risk refusal (ADR-0005 §3)
           resolve: (allow) => {
             pendingApproval = null;
             resolve(allow);
@@ -210,9 +213,12 @@ export function createFetchHandler(opts: WebServerOptions): (req: Request) => Pr
     // stops prompting for the rest of the session (uses the shared policy).
     const always = body.decision === "always";
     const allow = always || body.decision === "allow" || body.allow === true;
-    if (always) opts.runtime.policy.allowForSession(pendingApproval.name);
+    // A high-risk tool's rule is refused here (ADR-0005 §3); this call is still
+    // approved, so report the HONEST decision — "allow", not "always" — otherwise
+    // the client is told a standing rule exists when it doesn't.
+    const persisted = always && opts.runtime.policy.allowForSession(pendingApproval.name, pendingApproval.risk);
     pendingApproval.resolve(allow);
-    return json(200, { ok: true, decision: always ? "always" : allow ? "allow" : "deny" });
+    return json(200, { ok: true, decision: persisted ? "always" : allow ? "allow" : "deny" });
   }
 
   return (req: Request): Promise<Response> | Response => {

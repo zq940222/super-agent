@@ -100,6 +100,22 @@ test('approver "always" grants a session allow-rule on the shared policy', async
   expect(policy.decide({ name: "write_file", risk: "medium" })).toBe("allow");
 });
 
+test("approver does not offer (or persist) 'always' for a high-risk tool (ADR-0005 §3)", async () => {
+  const policy = new PermissionPolicy();
+  const prompts: string[] = [];
+  const approve = createApprover(policy, {
+    ask: async (p) => {
+      prompts.push(p);
+      return "a"; // user types 'always' even though it isn't offered
+    },
+  });
+  const highReq: PermissionRequest = { name: "shell", input: {}, risk: "high" };
+  expect(await approve(highReq)).toBe(true); // still approved this once
+  expect(prompts[0]).not.toContain("[a]lways"); // the affordance isn't shown…
+  expect(prompts[0]).toContain("high-risk");
+  expect(policy.decide({ name: "shell", risk: "high" })).toBe("ask"); // …and nothing persisted
+});
+
 test("approver denies on empty/no and re-asks on garbage", async () => {
   const policy = new PermissionPolicy();
   const answers = ["huh", "n"]; // first unrecognized → re-ask, then deny

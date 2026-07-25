@@ -59,9 +59,19 @@ export class PermissionPolicy {
    * is unchanged: an explicit `deny`/`ask` rule still wins (see `decide`), and
    * `readonly` denies risky tools outright without ever prompting, so this can
    * only take effect after an `ask` actually fired. See ADR-0001 §5.
+   *
+   * A `high`-risk tool is **never** persisted here (ADR-0005 §3): the one-click
+   * "always allow" answers "is *this* command OK?", not "run everything
+   * unprompted", so a standing rule would be a consent mismatch. The current
+   * call is still approved by the approver; it just won't skip future prompts.
+   * Deliberate up-front escape hatches — `auto` mode and a construction-time
+   * `allow: [...]` rule — are unaffected; only the runtime click is refused.
+   * Returns whether a standing rule was granted. See ADR-0005 §3.
    */
-  allowForSession(name: string): void {
+  allowForSession(name: string, risk?: Risk): boolean {
+    if (risk === "high") return false;
     this.allow.add(name);
+    return true;
   }
 
   decide(tool: { name: string; risk: Risk; mutates?: boolean }): Decision {

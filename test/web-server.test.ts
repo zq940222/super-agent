@@ -26,13 +26,13 @@ const toolUseTurn = (id: string, name: string, input: unknown): AssistantTurn =>
 /** A high-risk (⇒ ask-tier) tool that records whether its handler actually ran,
  *  so a test can assert the gate blocked it (fail-closed), not just that the run
  *  didn't wedge. Fresh per test so `ran` doesn't leak across cases. */
-function makeGatedTool(): { tool: ReturnType<typeof defineTool>; ran: () => boolean } {
+function makeGatedTool(risk: "medium" | "high" = "medium"): { tool: ReturnType<typeof defineTool>; ran: () => boolean } {
   let ran = false;
   const tool = defineTool({
     name: "danger",
     description: "A gated action.",
     schema: z.object({}),
-    risk: "high",
+    risk,
     handler: () => {
       ran = true;
       return "danger done";
@@ -334,8 +334,37 @@ test('POST /approve "always" runs the tool and stops prompting for it this sessi
     // Both calls ran.
     expect(events.filter((e) => e.type === "tool_result" && e.content === "danger done").length).toBe(2);
     expect(gated.ran()).toBe(true);
-    // The shared policy now auto-allows the tool.
-    expect(runtime.policy.decide({ name: "danger", risk: "high" })).toBe("allow");
+    // The shared policy now auto-allows the (medium-risk) tool.
+    expect(runtime.policy.decide({ name: "danger", risk: "medium" })).toBe("allow");
+  });
+});
+
+test('POST /approve "always" does NOT persist a high-risk rule (ADR-0005 §3)', async () => {
+  // A high-risk tool called twice: "always" approves each call, but must re-prompt
+  // every time — one click can't silently grant session-wide high-risk execution.
+  const provider = new ScriptedProvider([
+    toolUseTurn("t1", "danger", {}),
+    toolUseTurn("t2", "danger", {}),
+    endTurn("done"),
+  ]);
+  await withServer(provider, async ({ base, headers, runtime }) => {
+    const gated = makeGatedTool("high");
+    runtime.registry.register(gated.tool);
+    const resp = await fetch(`${base}/prompt`, { method: "POST", headers, body: JSON.stringify({ prompt: "twice" }) });
+    let prompts = 0;
+    const decisions: string[] = [];
+    const events = await readReacting(resp, async (e) => {
+      if (e.type === "permission_request") {
+        prompts += 1;
+        const r = await fetch(`${base}/approve`, { method: "POST", headers, body: JSON.stringify({ decision: "always" }) });
+        decisions.push(((await r.json()) as { decision: string }).decision);
+      }
+    });
+    expect(prompts).toBe(2); // re-prompted on the second call — no standing rule
+    expect(events.filter((e) => e.type === "tool_result" && e.content === "danger done").length).toBe(2);
+    // The server reports the HONEST decision — "allow" (approved once), not "always".
+    expect(decisions).toEqual(["allow", "allow"]);
+    expect(runtime.policy.decide({ name: "danger", risk: "high" })).toBe("ask"); // still gated
   });
 });
 
