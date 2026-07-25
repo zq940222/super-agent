@@ -67,6 +67,17 @@ Brave `description` snippets carry highlight markup (`<strong>…`), so we strip
 snippet (output-size discipline, §4). No SSRF guard is needed: the endpoint is fixed, not
 model-chosen (unlike `web_fetch`). Same `medium`-risk posture as `web_fetch` (§2).
 
+### 3b. Search tools guard the glob *pattern* separately from the path (P14-4)
+
+`glob`/`grep` are `low`-risk read-only tools, but they surfaced a new boundary rule.
+The per-path `resolveInWorkspace` guard bounds the `path` argument — but a glob *pattern*
+is matched relative to that base, and Bun's `Glob.scan` honors `..`, so `../*.txt` reads
+sibling files *even when a `workspaceRoot` is set*. So the search tools reject an escaping
+pattern (`..` segment or absolute) up front via `unsafeGlobPattern`, in addition to the
+path guard. This is the same "the boundary must be checked where the escape actually
+happens" lesson as the SSRF per-hop redirect check (§3) — recorded here so future
+file-enumerating tools apply it.
+
 ### 4. Tool-output size discipline (research checklist #3)
 
 Tool output is what fills the context window. Every tool that can return a lot (fetched pages
