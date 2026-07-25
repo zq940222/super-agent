@@ -54,6 +54,14 @@ AGENT_PROVIDER=azure     bun run agent "列出 src/，然后解释 engine.ts"
 bun run tui
 ```
 
+或者用浏览器 UI——一个零依赖的 `Bun.serve` 服务端（localhost + 每会话 token）把事件流
+推给 React 客户端。先构建一次客户端，再运行，打开打印出的 `http://localhost:8787/?token=…`：
+
+```bash
+cd web && bun install && bun run build && cd ..
+bun run web
+```
+
 写文件是高风险操作，默认策略下 agent 在执行 `write_file` 前会先问你。想给它外部工具，
 在当前目录放一个 `mcp.json`（见 [`mcp.json.example`](mcp.json.example)）；每个服务器的
 工具会以 `mcp__<服务器>__<工具>` 出现，并和其它工具一样受权限门管辖。

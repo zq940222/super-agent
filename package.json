@@ -8,6 +8,7 @@
   "scripts": {
     "agent": "bun run src/cli/main.ts",
     "tui": "bun run src/tui/main.ts",
+    "web": "cd web && bun run build && cd .. && bun run src/web/main.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

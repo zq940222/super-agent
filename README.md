@@ -61,6 +61,15 @@ a REPL front-end (type a task, `/exit` to quit, `Ctrl-C` to interrupt a run):
 bun run tui
 ```
 
+Or a browser UI — a zero-dependency `Bun.serve` server (localhost + a per-session
+token) streaming to a React client. Build the client once, then run it; open the
+printed `http://localhost:8787/?token=…` URL:
+
+```bash
+cd web && bun install && bun run build && cd ..
+bun run web
+```
+
 Writing a file is high-risk, so under the default policy the agent asks before
 `write_file` runs. To give it external tools, drop an `mcp.json` in the cwd (see
 [`mcp.json.example`](mcp.json.example)); each server's tools appear as
