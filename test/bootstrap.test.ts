@@ -45,20 +45,71 @@ async function withTempSkills<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 
 test("registers the native + skill + spawn_agent tools and builds the system prompt", async () => {
   await withTempSkills(async (skillsDir) => {
-    const rt = await bootstrap({
-      provider: new ScriptedProvider([]),
-      skillsDir,
-      loadMcp: false,
-    });
+    // Deterministic regardless of the maintainer's .env: web_search is check-gated
+    // on BRAVE_API_KEY, so unset it here to assert the unconfigured toolset.
+    const saved = process.env.BRAVE_API_KEY;
+    delete process.env.BRAVE_API_KEY;
+    let rt: Awaited<ReturnType<typeof bootstrap>>;
+    try {
+      rt = await bootstrap({ provider: new ScriptedProvider([]), skillsDir, loadMcp: false });
+    } finally {
+      if (saved !== undefined) process.env.BRAVE_API_KEY = saved;
+    }
     try {
       const names = rt.registry.list().map((t) => t.name).sort();
       expect(names).toEqual(
+        // web_search is absent: no Brave key ⇒ check() hides it from the model.
         ["create_skill", "find_skill", "list_dir", "read_file", "read_skill", "spawn_agent", "web_fetch", "write_file"].sort(),
       );
       expect(rt.system.startsWith(SYSTEM)).toBe(true);
       expect(rt.system).toContain("create_skill"); // the skills catalog got appended
       expect(rt.mode).toBe("default");
       expect(rt.provider.name).toBe("scripted");
+    } finally {
+      await rt.close();
+    }
+  });
+});
+
+test("web_search is offered only when BRAVE_API_KEY is configured", async () => {
+  await withTempSkills(async (skillsDir) => {
+    const saved = process.env.BRAVE_API_KEY;
+    process.env.BRAVE_API_KEY = "test-brave-key";
+    let rt: Awaited<ReturnType<typeof bootstrap>>;
+    try {
+      rt = await bootstrap({ provider: new ScriptedProvider([]), skillsDir, loadMcp: false });
+    } finally {
+      if (saved === undefined) delete process.env.BRAVE_API_KEY;
+      else process.env.BRAVE_API_KEY = saved;
+    }
+    try {
+      expect(rt.registry.list().map((t) => t.name)).toContain("web_search");
+    } finally {
+      await rt.close();
+    }
+  });
+});
+
+// web_search is the first check-gated tool. Subagents receive the toolset via
+// registry.all() (unfiltered), but the child's own engine calls registry.list()
+// (check-filtered) — so an unconfigured web_search must be hidden from the child
+// too, not merely from the top level. Guards the ADR-0004 check-gating claim.
+test("a check-gated tool (web_search, no key) is not offered to subagents", async () => {
+  await withTempSkills(async (skillsDir) => {
+    const saved = process.env.BRAVE_API_KEY;
+    delete process.env.BRAVE_API_KEY;
+    const provider = new ScriptedProvider([endTurn("child done")]); // child answers at once
+    let rt: Awaited<ReturnType<typeof bootstrap>>;
+    try {
+      rt = await bootstrap({ provider, skillsDir, loadMcp: false });
+    } finally {
+      if (saved !== undefined) process.env.BRAVE_API_KEY = saved;
+    }
+    try {
+      await rt.registry.get("spawn_agent")!.handler({ task: "anything" }, { cwd: process.cwd() });
+      // The child's request to the model must not include web_search.
+      const childReq = provider.calls.at(-1)!;
+      expect(childReq.tools?.map((t) => t.name)).not.toContain("web_search");
     } finally {
       await rt.close();
     }
