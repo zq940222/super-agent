@@ -28,8 +28,6 @@ export interface WebServerOptions {
   token: string;
   /** Our own origin, e.g. "http://localhost:8787" — requests must match it. */
   origin: string;
-  /** HITL approver for the main loop (P13-2 wires the browser bridge; default: deny). */
-  approve?: Approver;
   rollout?: RolloutRecorder;
   maxContextTokens?: number;
 }
@@ -81,9 +79,35 @@ function reject(req: Request, token: string, origin: string): Response | null {
 }
 
 export function createFetchHandler(opts: WebServerOptions): (req: Request) => Promise<Response> | Response {
-  const approve: Approver = opts.approve ?? (async () => false);
   let history: Message[] = [];
   let running = false;
+
+  // HITL bridge. The engine emits a `permission_request` event (the client sees
+  // it in the stream); its `approve` call parks here until `POST /approve`
+  // resolves it. Serialized (a promise chain) so at most one prompt is pending —
+  // the client answers "the current approval", no id needed. On disconnect the
+  // pending approval is denied, so a closed tab can't hang the run. ADR-0003 §4.
+  let pendingApproval: ((allow: boolean) => void) | null = null;
+
+  function makeApprover(signal: AbortSignal): Approver {
+    let tail: Promise<unknown> = Promise.resolve();
+    const one = (): Promise<boolean> =>
+      new Promise<boolean>((resolve) => {
+        if (signal.aborted) return resolve(false); // disconnected before we asked → deny
+        pendingApproval = (allow) => {
+          pendingApproval = null;
+          resolve(allow);
+        };
+      });
+    return () => {
+      const next = tail.then(one, one);
+      tail = next.then(
+        () => undefined,
+        () => undefined,
+      );
+      return next;
+    };
+  }
 
   async function handlePrompt(req: Request): Promise<Response> {
     if (running) return json(409, { error: "a run is already in progress" });
@@ -97,6 +121,10 @@ export function createFetchHandler(opts: WebServerOptions): (req: Request) => Pr
     if (!prompt) return json(400, { error: "missing prompt" });
 
     running = true;
+    // Disconnect denies any pending approval so gateAndExecute unblocks and the
+    // run reaches its abort check instead of hanging.
+    req.signal.addEventListener("abort", () => pendingApproval?.(false), { once: true });
+    const approve = makeApprover(req.signal);
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -147,12 +175,26 @@ export function createFetchHandler(opts: WebServerOptions): (req: Request) => Pr
     });
   }
 
+  async function handleApprove(req: Request): Promise<Response> {
+    if (!pendingApproval) return json(409, { error: "no pending approval" });
+    let body: { decision?: unknown; allow?: unknown } = {};
+    try {
+      body = (await req.json()) as typeof body;
+    } catch {
+      /* tolerate an empty body → treated as deny */
+    }
+    const allow = body.decision === "allow" || body.allow === true;
+    pendingApproval(allow);
+    return json(200, { ok: true, decision: allow ? "allow" : "deny" });
+  }
+
   return (req: Request): Promise<Response> | Response => {
     const denied = reject(req, opts.token, opts.origin);
     if (denied) return denied;
 
     const url = new URL(req.url);
     if (req.method === "POST" && url.pathname === "/prompt") return handlePrompt(req);
+    if (req.method === "POST" && url.pathname === "/approve") return handleApprove(req);
     if (url.pathname === "/") {
       // P13-4 serves the built React client here; a minimal placeholder for now.
       return new Response("<!doctype html><title>super-agent</title><p>web UI — client pending (P13-3)</p>", {
