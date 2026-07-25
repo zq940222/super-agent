@@ -26,6 +26,13 @@ test("rejects an absolute path outside the workspace root", () => {
   );
 });
 
+test("a relative path resolves INSIDE the workspace, even when cwd differs", () => {
+  // The bug this guards: workspace ≠ cwd made every relative path "escape".
+  const ws = resolve(root, "workspace");
+  expect(resolveInWorkspace({ cwd: root, workspaceRoot: ws }, "./notes.md")).toBe(resolve(ws, "notes.md"));
+  expect(resolveInWorkspace({ cwd: root, workspaceRoot: ws }, "sub/a.txt")).toBe(resolve(ws, "sub/a.txt"));
+});
+
 test("no workspaceRoot ⇒ unrestricted (back-compat)", () => {
   expect(resolveInWorkspace({ cwd: root }, "../anywhere.txt")).toBe(resolve(root, "../anywhere.txt"));
 });

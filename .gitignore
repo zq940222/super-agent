@@ -34,6 +34,9 @@ sessions/
 *.sqlite
 *.sqlite-*
 
+# Agent workspace — where the agent's file tools write (AGENT_WORKSPACE)
+workspace/
+
 # Editor / OS
 .DS_Store
 Thumbs.db

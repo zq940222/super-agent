@@ -13,6 +13,7 @@
 import { createInterface } from "node:readline";
 import { PermissionPolicy, type PermissionMode } from "../permissions/gate";
 import { bootstrap, type Runtime } from "../runtime/bootstrap";
+import { resolveWorkspace } from "../runtime/workspace";
 import { createRollout } from "../session/rollout";
 import { createApprover } from "./approver";
 import { createPrinter, runRepl } from "./app";
@@ -96,11 +97,13 @@ async function main(): Promise<void> {
           });
         });
 
+  const workspaceRoot = resolveWorkspace();
   const sessionPath = `.agent/sessions/${Date.now()}.jsonl`;
   const rollout = createRollout(sessionPath);
   const maxContextTokens = Number(process.env.AGENT_MAX_CONTEXT_TOKENS) || undefined;
 
-  writeLine(dim(`super-agent · ${runtime.provider.name} · ${mode} — type your task, /exit to quit, Ctrl-C to interrupt`));
+  writeLine(dim(`super-agent · ${runtime.provider.name} · ${mode} · files → ${workspaceRoot}`));
+  writeLine(dim(`type your task, /exit to quit, Ctrl-C to interrupt`));
 
   try {
     await runRepl({
@@ -117,6 +120,7 @@ async function main(): Promise<void> {
       },
       rollout,
       maxContextTokens,
+      workspaceRoot,
       stream: true,
     });
     writeLine(dim(`(session: ${sessionPath})`));
