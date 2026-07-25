@@ -78,6 +78,16 @@ function reject(req: Request, token: string, origin: string): Response | null {
   return decision.ok ? null : json(decision.status ?? 403, { error: decision.error });
 }
 
+/**
+ * Start the server. `idleTimeout: 0` is REQUIRED: transport B keeps the /prompt
+ * response open for the whole run, and it legitimately idles while parked at an
+ * approval or a slow model call — Bun's default 10s idle timeout would kill it
+ * mid-run. Disconnect is handled by `request.signal`, not the idle timeout.
+ */
+export function serve(opts: WebServerOptions & { port?: number }): ReturnType<typeof Bun.serve> {
+  return Bun.serve({ port: opts.port ?? 8787, idleTimeout: 0, fetch: createFetchHandler(opts) });
+}
+
 export function createFetchHandler(opts: WebServerOptions): (req: Request) => Promise<Response> | Response {
   let history: Message[] = [];
   let running = false;

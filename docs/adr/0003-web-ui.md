@@ -33,6 +33,12 @@ button (aborting the `fetch`) aborts the run between steps and mid-model-call (A
 The cost — hand-parsing NDJSON instead of EventSource's built-in framing — is small and
 one-directional streaming is exactly what B does well.
 
+**`idleTimeout: 0` is required** on `Bun.serve`. Transport B holds the `/prompt` response open
+for the whole run, and it legitimately idles while parked at an approval or a slow model
+call; Bun's default 10s idle timeout would kill the stream mid-run. Disconnect is detected by
+`request.signal`, not the idle timeout, so disabling it is safe. The `serve()` helper sets it
+(unit tests never idle that long, so this only surfaces in a real run — it did).
+
 ### 2. Server: `Bun.serve`, zero dependencies, reuses `bootstrap`
 
 The server is hand-rolled on `Bun.serve` — no framework — consistent with the from-scratch
