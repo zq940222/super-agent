@@ -62,7 +62,8 @@ cd web && bun install && bun run build && cd ..
 bun run web
 ```
 
-写文件是高风险操作，默认策略下 agent 在执行 `write_file` 前会先问你。想给它外部工具，
+`write_file` 是低风险，默认策略下 agent 直接写文件、不再询问（`create_skill`、MCP 工具等
+中/高风险操作仍会先问你；想禁掉这些风险操作可用 `readonly` 模式）。想给它外部工具，
 在当前目录放一个 `mcp.json`（见 [`mcp.json.example`](mcp.json.example)）；每个服务器的
 工具会以 `mcp__<服务器>__<工具>` 出现，并和其它工具一样受权限门管辖。
 
@@ -115,7 +116,7 @@ src/
 │  ├─ workspace.ts   resolveInWorkspace —— 文件工具的路径边界
 │  ├─ read-file.ts   read_file（输出截断）
 │  ├─ list-dir.ts    list_dir（列表截断）
-│  └─ write-file.ts  write_file（高风险；受门控）
+│  └─ write-file.ts  write_file（低风险；默认直接执行）
 ├─ session/
 │  └─ rollout.ts     append-only JSONL 会话持久化
 ├─ mcp/

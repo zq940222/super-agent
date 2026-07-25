@@ -36,6 +36,6 @@ test("respects the workspace boundary", async () => {
   }
 });
 
-test("declares high risk (so the gate asks by default)", () => {
-  expect(writeFileTool.risk).toBe("high");
+test("declares low risk (writes run without a prompt under the default policy)", () => {
+  expect(writeFileTool.risk).toBe("low");
 });
