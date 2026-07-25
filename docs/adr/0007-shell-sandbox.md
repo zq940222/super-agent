@@ -44,8 +44,12 @@ are untouched; `bunSpawn` stays sandbox-agnostic (it runs whatever `cmd` it's gi
 
 The generated SBPL profile:
 - `deny default` — everything not explicitly allowed is denied.
-- `allow file-read*` — reads are broad. `dyld`, shared libs, and the command binaries need it, and
-  *reading isn't the exfil risk — the network is*.
+- `allow file-read*` — reads are broad **by necessity**: `dyld`, shared libs, and the command
+  binaries all need it, and a workspace-write sandbox can't enumerate every readable dependency.
+  This is a real residual gap, not a free pass: a command can `cat ~/.aws/credentials > ./notes`
+  *inside* the workspace, after which `read_file` + `web_fetch` complete the exfil (and `web_fetch`
+  is `medium`-risk, so a persisted "Always allow" skips the prompt). The network denial closes the
+  *direct* exfil leg; cross-tool exfil via a workspace file is the next hardening (read-scoping).
 - `allow file-write*` only under the **realpath'd** workspace and the temp dirs (+ `/dev/null`,
   `/dev/stdout`, `/dev/stderr`). Everything else is read-only.
 - `deny network*` — **the central win**: a sandboxed command cannot open a socket, so it cannot
@@ -86,8 +90,10 @@ The payoff of a sandbox is that it *lets you relax approval* (auto-approve insid
 workspace-write sandbox → fewer prompts). That is a **separate policy decision** and is deliberately
 deferred: this phase adds containment only. `shell` stays `high`-risk and HITL-gated. Likewise,
 surfacing sandbox state **in the approval prompt** (a "⚠ UNSANDBOXED" badge on `PermissionRequest`)
-is deferred to a follow-up — v1 makes the fallback loud via the startup diagnostic (§4); the badge
-would need a field threaded through the permission event and both approvers.
+is deferred to a follow-up — v1 makes the status loud via the startup diagnostic (§4): TUI and CLI
+pass `log` to `bootstrap` so it prints there, and the web entry prints it in its own launch block
+(the browser has no badge yet, so a web user relies on the launch console). The badge would need a
+field threaded through the permission event and both approvers.
 
 ### 7. Testability: pure functions + platform-gated integration
 
