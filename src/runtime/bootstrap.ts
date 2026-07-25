@@ -23,6 +23,7 @@ import { createSkillTools, skillsCatalog } from "../skills/tools";
 import { readFileTool } from "../tools/read-file";
 import { listDirTool } from "../tools/list-dir";
 import { writeFileTool } from "../tools/write-file";
+import { editFileTool } from "../tools/edit-file";
 import { globTool } from "../tools/glob";
 import { grepTool } from "../tools/grep";
 import { createWebFetchTool } from "../tools/web-fetch";
@@ -35,7 +36,8 @@ export const SYSTEM = [
   "You are super-agent, a general-purpose assistant running in a terminal.",
   "You can call tools: list_dir to explore directories, read_file to read files,",
   "glob to find files by name pattern, grep to search file contents,",
-  "write_file to create or overwrite files, web_fetch to fetch a web page's text,",
+  "write_file to create or overwrite files, edit_file to make a surgical edit,",
+  "web_fetch to fetch a web page's text,",
   "shell to run a command (non-interactive, in the workspace, scrubbed env),",
   "and spawn_agent to delegate a self-contained subtask to a fresh subagent",
   "(which returns only its final answer).",
@@ -91,6 +93,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Runtime> {
     .register(readFileTool)
     .register(listDirTool)
     .register(writeFileTool)
+    .register(editFileTool)
     .register(globTool)
     .register(grepTool)
     .register(createWebFetchTool())
